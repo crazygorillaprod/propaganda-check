@@ -32,6 +32,36 @@ function extractLinks(html: string, baseUrl?: string) {
   return Array.from(new Set(links)).slice(0, 10); // limit
 }
 
+function isNoisyUrl(urlString: string) {
+  try {
+    const u = new URL(urlString);
+    const path = (u.pathname || "/").toLowerCase();
+    const noisyPatterns = ["/privacy", "/terms", "/about", "/contact", "/cookie", "/login", "/signup", "/search", "?/", "#", "/index", "/home"];
+    if (path === "/" || path.length <= 2) return true;
+    for (const p of noisyPatterns) {
+      if (path.includes(p)) return true;
+    }
+    // Query-only URLs are noisy
+    if (u.search && u.pathname === "/") return true;
+    return false;
+  } catch (e) {
+    return true;
+  }
+}
+
+// Simple heuristic classifier (fallback when OpenAI isn't available)
+function heuristicClassify(claim: string, text: string) {
+  const low = (s: string) => s.toLowerCase();
+  const t = low(text || "");
+  const c = low(claim || "");
+  if (/no evidence|debunk|false|not true|denies|contradict/.test(t)) return { stance: "refutes", confidence: 70 };
+  if (/study|research|data|report|evidence|found that|statistics|according to/.test(t)) return { stance: "supports", confidence: 60 };
+  // if the text repeats the claim, assume neutral-supporting
+  const claimWords = c.split(/\W+/).filter(Boolean).slice(0, 10).join(" ");
+  if (claimWords && t.includes(claimWords.split(" ")[0])) return { stance: "neutral", confidence: 50 };
+  return { stance: "neutral", confidence: 40 };
+}
+
 // Brave Search helper
 async function braveSearch(query: string, size = 5) {
   const key = process.env.BRAVE_SEARCH_API_KEY;
@@ -187,17 +217,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // If there are no model/page sources, enrich brave sources with fetched snippets
-    if ((!merged || merged.length === 0) && externalSources && externalSources.length > 0) {
-      // Fetch top 3 snippets (best-effort)
+    // Filter noisy links from merged set (drop site roots, /privacy, /terms, etc.)
+    const filtered = merged.filter((s) => s && s.url && !isNoisyUrl(s.url)).slice(0, 10);
+
+    // If there are no model/page sources, enrich brave sources with fetched snippets (but operate on filtered list)
+    if ((!filtered || filtered.length === 0) && externalSources && externalSources.length > 0) {
       for (let i = 0; i < Math.min(3, externalSources.length); i++) {
         const s = externalSources[i];
-        if (s && !s.snippet && s.url) {
-          // no await flood: do sequential limited fetches
+        if (s && !s.snippet && s.url && !isNoisyUrl(s.url)) {
           const sn = await fetchSnippet(s.url);
-          // find in merged and attach if exists
-          const idx = merged.findIndex((x) => x.url === s.url);
-          if (idx >= 0 && sn) merged[idx].snippet = sn;
+          const idx = filtered.findIndex((x) => x.url === s.url);
+          if (idx >= 0 && sn) filtered[idx].snippet = sn;
         }
       }
     }
@@ -211,6 +241,50 @@ export async function POST(req: Request) {
       `${queryBase} data`,
     ].slice(0, 4);
 
+    // Classify top sources (up to 5) with OpenAI or heuristic fallback
+    const classifyLimit = Math.min(5, filtered.length);
+    const classified: Array<{ url?: string; title?: string; snippet?: string; origin?: string; stance?: string; confidence?: number }> = [];
+
+    for (let i = 0; i < classifyLimit; i++) {
+      const s = filtered[i];
+      if (!s || !s.url) continue;
+      let stance = 'unknown';
+      let confidence = 0;
+
+      // Try model-based classification if we have an API key
+      if (process.env.OPENAI_API_KEY && !process.env.MOCK_ANALYZE) {
+        try {
+          const prompt = `Classify whether the following source (title/snippet) would SUPPORT, REFUTE, or be NEUTRAL regarding the CLAIM.\n\nCLAIM: ${input}\n\nSOURCE TITLE: ${s.title || ''}\nSOURCE SNIPPET: ${s.snippet || ''}\n\nReturn JSON only: { "stance": "supports|refutes|neutral", "confidence": number }
+`;
+          const r = await new OpenAI({ apiKey: process.env.OPENAI_API_KEY }).chat.completions.create({
+            model: 'gpt-4.1-mini',
+            messages: [{ role: 'system', content: 'You are a concise classifier.' }, { role: 'user', content: prompt }],
+            response_format: { type: 'json_object' },
+          });
+          const rawc = r.choices?.[0]?.message?.content ?? '{}';
+          const parsed = typeof rawc === 'string' ? JSON.parse(rawc) : rawc;
+          stance = parsed.stance || 'unknown';
+          confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+        } catch (e) {
+          const h = heuristicClassify(input, s.snippet || s.title || '');
+          stance = h.stance; confidence = h.confidence;
+        }
+      } else {
+        // Heuristic fallback
+        const h = heuristicClassify(input, s.snippet || s.title || '');
+        stance = h.stance; confidence = h.confidence;
+      }
+
+      classified.push({ url: s.url, title: s.title, snippet: s.snippet, origin: s.origin, stance, confidence });
+    }
+
+    // Append any remaining filtered sources without classification
+    for (let i = classifyLimit; i < filtered.length; i++) {
+      const s = filtered[i];
+      if (!s) continue;
+      classified.push({ url: s.url, title: s.title, snippet: s.snippet, origin: s.origin, stance: 'unknown', confidence: 0 });
+    }
+
     // Normalize response
     const out = {
       tactics: {
@@ -220,7 +294,7 @@ export async function POST(req: Request) {
       },
       rebuttal: { short: data.rebuttal?.short ?? "" },
       verifiability_score: typeof data.verifiability_score === "number" ? data.verifiability_score : 0,
-      sources: merged,
+      sources: classified,
       suggested_searches,
       research_needed: typeof data.research_needed === "boolean" ? data.research_needed : ( (typeof data.verifiability_score === 'number') ? data.verifiability_score < 90 : true ),
     };

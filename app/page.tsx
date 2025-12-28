@@ -93,8 +93,14 @@ export default function Home() {
                 <li key={i} style={{ marginBottom: 8 }}>
                   {s.url ? (
                     <div>
-                      <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
-                      <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
+                        <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
+                        <span style={{ marginLeft: 8 }}>
+                          {s.stance === 'supports' ? <small style={{ background: '#d1fae5', color: '#065f46', padding: '2px 6px', borderRadius: 6 }}>SUPPORTS</small> : s.stance === 'refutes' ? <small style={{ background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 6 }}>REFUTES</small> : s.stance === 'neutral' ? <small style={{ background: '#f3f4f6', color: '#374151', padding: '2px 6px', borderRadius: 6 }}>NEUTRAL</small> : <small style={{ background: '#fff7ed', color: '#92400e', padding: '2px 6px', borderRadius: 6 }}>UNKNOWN</small>}
+                        </span>
+                        {s.confidence ? <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>({s.confidence}%)</span> : null}
+                      </div>
                       {s.snippet && <div style={{ marginTop: 6, color: '#444' }}>{s.snippet}</div>}
                     </div>
                   ) : (
@@ -132,10 +138,9 @@ export default function Home() {
             </div>
           ) : null}
 
-          <details style={{ marginTop: 12 }}>
-            <summary>Show raw response</summary>
-            <pre style={{ marginTop: 12, padding: 12, background: "#111", color: "#fff" }}>{JSON.stringify(result, null, 2)}</pre>
-          </details>
+          <div style={{ marginTop: 12 }}>
+            <small style={{ color: '#666' }}>Raw model output is hidden by default. If you need to debug, enable developer mode (DEV_ALLOW_RAW) in the server environment.</small>
+          </div>
         </section>
       )}
     </main>
