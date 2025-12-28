@@ -1,5 +1,7 @@
 import OpenAI from 'openai';
-import { EvidenceItem } from './types';
+import { EvidenceItem, AttributionType } from './types';
+import { calculate_attribution_boost } from './attribution';
+import { stripHtml } from './sanitize';
 
 type RawSource = {
   title: string;
@@ -8,16 +10,6 @@ type RawSource = {
   age?: string;
 };
 
-const HIGH_CREDIBILITY_DOMAINS = [
-  'gov', 'edu', 'reuters.com', 'apnews.com', 'bbc.com', 'npr.org',
-  'nature.com', 'science.org', 'who.int', 'cdc.gov', 'nih.gov'
-];
-
-const MEDIUM_CREDIBILITY_DOMAINS = [
-  'cnn.com', 'nytimes.com', 'washingtonpost.com', 'theguardian.com',
-  'wsj.com', 'bloomberg.com', 'economist.com', 'theatlantic.com'
-];
-
 const LOW_CREDIBILITY_INDICATORS = [
   'blog', 'wordpress', 'medium.com', 'substack', 'twitter.com', 'x.com',
   'facebook.com', 'instagram.com', 'tiktok.com', 'reddit.com'
@@ -25,16 +17,19 @@ const LOW_CREDIBILITY_INDICATORS = [
 
 export function assessSourceCredibility(domain: string): number {
   const d = domain.toLowerCase();
-  
-  // High credibility: 0.8-1.0
-  if (HIGH_CREDIBILITY_DOMAINS.some(hc => d.endsWith(hc) || d.includes(hc))) {
-    return 0.9;
-  }
-  
-  // Medium credibility: 0.5-0.7
-  if (MEDIUM_CREDIBILITY_DOMAINS.some(mc => d.includes(mc))) {
-    return 0.6;
-  }
+
+  // Government/official/academic
+  if (d.endsWith('.gov') || d.endsWith('.mil') || d.endsWith('.edu')) return 0.95;
+  if (d.endsWith('who.int') || d.endsWith('cdc.gov') || d.endsWith('nih.gov')) return 0.95;
+
+  // Wire services
+  if (d.endsWith('reuters.com') || d.endsWith('apnews.com') || d.endsWith('afp.com')) return 0.90;
+
+  // Tier-1 news
+  if (d.endsWith('nytimes.com') || d.endsWith('wsj.com') || d.endsWith('ft.com') || d.endsWith('bbc.com') || d.endsWith('bbc.co.uk')) return 0.85;
+
+  // Tier-2 news
+  if (d.endsWith('cnn.com') || d.endsWith('theguardian.com') || d.endsWith('politico.com')) return 0.80;
   
   // Low credibility: 0.2-0.4
   if (LOW_CREDIBILITY_INDICATORS.some(lc => d.includes(lc))) {
@@ -42,7 +37,7 @@ export function assessSourceCredibility(domain: string): number {
   }
   
   // Unknown: default medium-low
-  return 0.5;
+  return 0.55;
 }
 
 export function extractKeyQuote(snippet: string, claim: string): string | undefined {
@@ -55,37 +50,52 @@ export function extractKeyQuote(snippet: string, claim: string): string | undefi
 
 export async function scoreEvidence(
   claim: string,
-  sources: RawSource[]
+  sources: RawSource[],
+  attributionType?: AttributionType
 ): Promise<EvidenceItem[]> {
+  // Calculate attribution boost if present
+  const attributionBoost = attributionType ? calculate_attribution_boost(attributionType) : 0;
+  
   return sources.map(source => {
     const domain = new URL(source.url).hostname.replace(/^www\./, '');
+    const cleanSnippet = stripHtml(source.snippet || '');
     
     // Simple relevance heuristic: check if claim keywords appear in title/snippet
     const claimKeywords = claim.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    const sourceText = `${source.title} ${source.snippet || ''}`.toLowerCase();
+    const sourceText = `${source.title} ${cleanSnippet}`.toLowerCase();
     const matchingKeywords = claimKeywords.filter(kw => sourceText.includes(kw));
     const relevanceScore = Math.min(matchingKeywords.length / Math.max(claimKeywords.length, 1), 1);
     
-    const credibilityScore = assessSourceCredibility(domain);
-    
-    // Convert relevance to confidence (0-1)
-    const confidence = Math.max(relevanceScore * 0.7 + credibilityScore * 0.3, 0.2);
+    const baselineReputation = assessSourceCredibility(domain);
+
+    // Match quality: how directly the source text overlaps the claim keywords.
+    const matchQuality = Math.max(0, Math.min(1, relevanceScore));
+
+    // Total credibility = baseline reputation + match quality (weighted)
+    const credibility = Math.max(0.05, Math.min(1, baselineReputation * 0.75 + matchQuality * 0.25));
+
+    // Convert relevance + baseline to confidence (0-1) and add attribution boost
+    const baseConfidence = matchQuality * 0.7 + baselineReputation * 0.3;
+    const confidence = Math.min(Math.max(baseConfidence + attributionBoost, 0.2), 1.0);
     
     return {
+      role: 'CORROBORATION',
       url: source.url,
       title: source.title,
+      domain,
       publisher: domain,
       published_at: source.age ? parsePublishDate(source.age) : undefined,
-      snippet: source.snippet || '',
-      supports_claim: false, // will be updated by analyzeSourceStance
-      confidence,
+      snippet: cleanSnippet,
+      stance: 'unclear',
+      credibility,
+      supports_claim: false, // legacy: will be updated by analyzeSourceStance
+      confidence, // legacy
       // Legacy fields for backward compatibility
-      domain,
       age: source.age,
       relevanceScore: Math.max(relevanceScore, 0.3),
-      credibilityScore,
+      credibilityScore: baselineReputation,
       stanceTowardsClaim: 'unclear',
-      keyQuote: extractKeyQuote(source.snippet || '', claim),
+      keyQuote: extractKeyQuote(cleanSnippet, claim),
     };
   });
 }
@@ -150,7 +160,11 @@ export async function analyzeSourceStance(
       messages: [
         {
           role: 'system',
-          content: 'For each source, determine if it supports, refutes, is neutral toward, or is unclear about the claim. Return JSON: { stances: Array<{ index: number, stance: "supports"|"refutes"|"neutral"|"unclear" }> }',
+          content: [
+            'For each source, determine if it SUPPORTS, REFUTES, is CONTEXT (relevant but not confirming), is NEUTRAL, or is UNCLEAR about the claim.',
+            'Be strict: only mark SUPPORTS/REFUTES when the snippet explicitly confirms/denies the specific relationship in the claim.',
+            'Return JSON only: { stances: Array<{ index: number, stance: "supports"|"refutes"|"context"|"neutral"|"unclear" }> }',
+          ].join(' '),
         },
         {
           role: 'user',
@@ -166,12 +180,23 @@ export async function analyzeSourceStance(
     // Update evidence with stances
     return evidence.map((e, idx) => {
       const stanceData = stances.find(s => s.index === idx);
-      if (stanceData && ['supports', 'refutes', 'neutral', 'unclear'].includes(stanceData.stance)) {
-        const stance = stanceData.stance as EvidenceItem['stanceTowardsClaim'];
-        return { 
-          ...e, 
-          stanceTowardsClaim: stance,
-          supports_claim: stance === 'supports',
+      if (stanceData && ['supports', 'refutes', 'neutral', 'context', 'unclear'].includes(stanceData.stance)) {
+        const stanceTowardsClaim = stanceData.stance as EvidenceItem['stanceTowardsClaim'];
+
+        const stance: EvidenceItem['stance'] =
+          stanceTowardsClaim === 'supports'
+            ? 'support'
+            : stanceTowardsClaim === 'refutes'
+              ? 'refute'
+              : stanceTowardsClaim === 'context'
+                ? 'context'
+              : 'unclear';
+
+        return {
+          ...e,
+          stance,
+          stanceTowardsClaim,
+          supports_claim: stance === 'support',
         };
       }
       return e;

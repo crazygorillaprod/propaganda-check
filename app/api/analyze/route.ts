@@ -1,13 +1,21 @@
 import OpenAI from "openai";
-import { Claim, AnalysisResult } from "@/lib/types";
+import { ArticleMeta, Claim, EvidenceItem, AnalysisResult } from "@/lib/types";
 import { fetchArticleMeta } from "@/lib/article-meta";
-import { extractStructuredClaims, rankClaimImportance } from "@/lib/claims";
+import { analyzeCheckability, extractStructuredClaims, rankClaimImportance } from "@/lib/claims";
 import { scoreEvidence, analyzeSourceStance } from "@/lib/evidence";
 import {
   calculateOverallVerifiability,
   identifyEvidenceGaps,
   generateSmartSearches,
 } from "@/lib/verifiability";
+import {
+  getSearchClient,
+  retrieve_evidence_for_claim,
+  type SearchResult,
+} from "@/lib/search-client";
+import { sanitizeUrl, stripHtml } from "@/lib/sanitize";
+import { applyStanceGuardrails } from "@/lib/stance-guardrails";
+import { buildInputEvidenceForClaim } from "@/lib/input-evidence";
 
 export const runtime = "nodejs";
 
@@ -31,6 +39,106 @@ function isUrl(s: string) {
   } catch {
     return false;
   }
+}
+
+function deriveDeterministicVerdict(
+  claim: Claim,
+  retrievalState: 'NOT_RUN' | 'RAN_NO_RESULTS' | 'RAN_WITH_RESULTS'
+): { verdict: Claim['verdict']; verdictConfidence: number; reasoning: string } {
+  if (retrievalState === 'NOT_RUN') {
+    return {
+      verdict: 'Not verified yet',
+      verdictConfidence: 0,
+      reasoning: 'Evidence retrieval not run for this analysis.',
+    };
+  }
+
+  const allEvidence: EvidenceItem[] = claim.evidence || [];
+  const corroborationEvidence = allEvidence.filter((e) => e.role !== 'INPUT');
+  const hasInputEvidence = allEvidence.some((e) => e.role === 'INPUT');
+
+  if (corroborationEvidence.length === 0) {
+    if (hasInputEvidence) {
+      return {
+        verdict: 'Appears in provided source (not yet corroborated)',
+        verdictConfidence: 0,
+        reasoning: 'This claim appears in the provided source, but no external corroboration was retrieved yet.',
+      };
+    }
+
+    return {
+      verdict: 'No corroboration found',
+      verdictConfidence: 0,
+      reasoning: 'Search ran but returned no corroborating sources for this claim.',
+    };
+  }
+
+  const evidence = corroborationEvidence;
+
+  const supports = evidence.filter((e) => e.stance === 'support');
+  const refutes = evidence.filter((e) => e.stance === 'refute');
+
+  const avg = (items: typeof evidence) => {
+    const vals = items
+      .map((e) => (typeof e.confidence === 'number' ? e.confidence : 0))
+      .filter((n) => n > 0);
+    if (vals.length === 0) return 0;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+
+  const supportConf = avg(supports);
+  const refuteConf = avg(refutes);
+
+  if (supports.length > 0 && refutes.length === 0) {
+    if (supportConf >= 0.60) {
+      return {
+        verdict: 'Supported',
+        verdictConfidence: supportConf,
+        reasoning: `At least ${supports.length} source(s) explicitly support this claim.`,
+      };
+    }
+    if (supportConf >= 0.40) {
+      return {
+        verdict: 'Likely supported',
+        verdictConfidence: supportConf,
+        reasoning: `At least ${supports.length} source(s) support this claim, but the match is not fully explicit.`,
+      };
+    }
+    return {
+      verdict: 'Mixed/unclear',
+      verdictConfidence: supportConf,
+      reasoning: 'Sources appear relevant, but do not explicitly confirm this specific claim.',
+    };
+  }
+
+  if (refutes.length > 0 && supports.length === 0) {
+    if (refuteConf >= 0.60) {
+      return {
+        verdict: 'Not supported',
+        verdictConfidence: refuteConf,
+        reasoning: `At least ${refutes.length} source(s) explicitly refute this claim.`,
+      };
+    }
+    return {
+      verdict: 'Mixed/unclear',
+      verdictConfidence: refuteConf,
+      reasoning: 'Some sources suggest this claim may be false, but the refutation is not explicit.',
+    };
+  }
+
+  if (supports.length > 0 && refutes.length > 0) {
+    return {
+      verdict: 'Mixed/unclear',
+      verdictConfidence: Math.max(supportConf, refuteConf),
+      reasoning: 'There is both supporting and refuting evidence across sources.',
+    };
+  }
+
+  return {
+    verdict: 'Mixed/unclear',
+    verdictConfidence: 0.3,
+    reasoning: 'Sources are relevant context but do not confirm or refute this claim.',
+  };
 }
 
 function getBaseDomain(urlStr: string) {
@@ -149,11 +257,13 @@ async function braveSearch(query: string, excludeDomains: string[] = []) {
 
 export async function POST(req: Request) {
   try {
-    const { input } = await req.json();
+    const { input: rawInput } = await req.json();
 
-    if (!input || typeof input !== "string" || input.trim().length < 8) {
+    if (!rawInput || typeof rawInput !== "string" || rawInput.trim().length < 8) {
       return Response.json({ error: "Missing input" }, { status: 400 });
     }
+
+    const input = isUrl(rawInput.trim()) ? sanitizeUrl(rawInput.trim()) : rawInput.trim();
 
     if (!process.env.OPENAI_API_KEY) {
       return Response.json({ error: "OPENAI_API_KEY not set" }, { status: 500 });
@@ -161,23 +271,71 @@ export async function POST(req: Request) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const inputIsUrl = isUrl(input.trim());
-    const inputDomain = inputIsUrl ? getBaseDomain(input.trim()) : "";
+    const inputIsUrl = isUrl(input);
+    const inputDomain = inputIsUrl ? getBaseDomain(input) : "";
 
     // 1) Fetch article metadata for URLs
-    let articleMeta: any = { sourceType: 'unknown' as const };
+    let articleMeta: ArticleMeta = { sourceType: 'unknown' as const };
     let urlContext = "";
+    let fullArticleText = ""; // Store for attribution detection
     
     if (inputIsUrl) {
-      const { results: firstHits } = await braveSearch(input.trim(), []);
-      const hit = firstHits.find((h) => getBaseDomain(h.url) === inputDomain) || firstHits[0];
+      // First, try to fetch and parse HTML for better metadata
+      let htmlMeta: Partial<ArticleMeta> | null = null;
+      try {
+        console.log(`[HTML Fetch] Attempting to fetch: ${input}`);
+        const htmlResponse = await fetch(input, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; PropagandaCheck/1.0)',
+          },
+          signal: AbortSignal.timeout(10000), // 10 second timeout
+        });
+        
+        if (htmlResponse.ok) {
+          console.log(`[HTML Fetch] Success (${htmlResponse.status}) - ${htmlResponse.headers.get('content-type')}`);
+          const html = await htmlResponse.text();
+          const { extract_article_meta } = await import('@/lib/html-parser');
+          htmlMeta = extract_article_meta(html, input);
+          
+          // Extract text content for attribution detection (remove HTML tags)
+          fullArticleText = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          console.log(`[HTML Fetch] Extracted ${fullArticleText.length} chars of article text`);
+        } else {
+          console.warn(`[HTML Fetch] Failed with status ${htmlResponse.status}`);
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.warn(`[HTML Fetch] Error: ${errorMsg} - falling back to Brave Search`);
+      }
       
-      articleMeta = await fetchArticleMeta(input.trim(), hit);
+      // Fallback to Brave Search for additional context
+      const searchClient = getSearchClient();
+      let hit: SearchResult | null = null;
+      
+      if (searchClient.isAvailable()) {
+        const searchResponse = await searchClient.search(input, [], 5);
+        hit = searchResponse.results.find((h) => getBaseDomain(h.url) === inputDomain) || searchResponse.results[0];
+      }
+      
+      // Use HTML metadata if available, otherwise use Brave Search
+      if (htmlMeta) {
+        articleMeta = {
+          ...(htmlMeta as ArticleMeta),
+          sourceType: hit ? (await fetchArticleMeta(input, hit)).sourceType : 'unknown',
+        };
+      } else {
+        articleMeta = hit ? await fetchArticleMeta(input, hit) : { sourceType: 'unknown' as const };
+      }
       
       if (hit) {
-        urlContext = `URL: ${input.trim()}\nTitle: ${hit.title}\nSnippet: ${hit.snippet}`;
+        urlContext = `URL: ${input}\nTitle: ${articleMeta.title || hit.title}\nSnippet: ${stripHtml(hit.snippet || '')}`;
       } else {
-        urlContext = `URL: ${input.trim()}`;
+        urlContext = `URL: ${input}\nTitle: ${articleMeta.title || ''}`;
       }
     }
 
@@ -187,57 +345,107 @@ export async function POST(req: Request) {
     let claims = await extractStructuredClaims(claimExtractionText, openai);
     claims = rankClaimImportance(claims, input.length);
 
+    // Safety filter: drop meta-claims about publication/source/publisher.
+    claims = claims.filter((c) => {
+      const t = (c.text || '').toLowerCase();
+      if (!t) return false;
+      if (/(^|\b)(published by|was published by|is published by)\b/.test(t)) return false;
+      if (/(^|\b)published (on|at)\b/.test(t)) return false;
+      if (/(^|\b)(the article|this article|the story|this story|the report|this report)\b/.test(t) && /(published|publisher|outlet|website|domain|url|link)\b/.test(t)) return false;
+      return true;
+    });
+
+    // 2.5) Detect attribution for each claim (if we have article text)
+    if (fullArticleText) {
+      const { detect_attribution } = await import('@/lib/attribution');
+      for (const claim of claims) {
+        const attribution = detect_attribution(claim.text, fullArticleText);
+        if (attribution.is_attributed) {
+          claim.attribution_type = attribution.attribution_type;
+          claim.attribution_snippet = attribution.attribution_snippet;
+        }
+      }
+    }
+
     // 3) Retrieve and score evidence for each claim
+    const searchClient = getSearchClient();
+    const searchEnabled = searchClient.isAvailable();
+    
     for (const claim of claims) {
-      const { usedQuery, results: sources } = await braveSearch(
+      const inputEvidence = inputIsUrl
+        ? buildInputEvidenceForClaim({
+            inputUrl: input,
+            articleTitle: articleMeta.title,
+            articleSnippet: articleMeta.snippet,
+            fullArticleText,
+            claimText: claim.text,
+          })
+        : null;
+
+      // Use new search client to retrieve evidence
+      const evidenceResults = await retrieve_evidence_for_claim(
         claim.text,
         inputDomain ? [inputDomain] : []
       );
       
-      // Score evidence for relevance and credibility
-      claim.evidence = await scoreEvidence(claim.text, sources.slice(0, 6));
+      // Convert SearchResult to the format expected by scoreEvidence
+      const sources = evidenceResults.map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+        age: r.age,
+      }));
+      
+      // Score evidence for relevance and credibility (with attribution boost if present)
+      const corroborationEvidence = await scoreEvidence(claim.text, sources, claim.attribution_type);
       
       // Analyze stance of each source (supports/refutes/neutral)
-      claim.evidence = await analyzeSourceStance(claim.text, claim.evidence, openai);
+      const corroborationWithStance = await analyzeSourceStance(claim.text, corroborationEvidence, openai);
+
+      claim.evidence = inputEvidence ? [inputEvidence, ...corroborationWithStance] : corroborationWithStance;
       
       // Calculate evidence summary
-      const uniqueDomains = new Set(claim.evidence.map(e => e.domain || e.publisher)).size;
-      const avgCredibility = claim.evidence.length > 0
-        ? claim.evidence.reduce((sum, e) => sum + (e.credibilityScore || 0), 0) / claim.evidence.length
+      // Prefer explicit domain, then derive from URL, and only then fall back to publisher label.
+      const corroborationOnly = (claim.evidence || []).filter((e) => e.role !== 'INPUT');
+      const uniqueDomains = new Set(
+        corroborationOnly
+          .map((e) => e.domain || getBaseDomain(e.url) || e.publisher)
+          .filter(Boolean)
+      ).size;
+      const avgCredibility = corroborationOnly.length > 0
+        ? corroborationOnly.reduce((sum, e) => sum + (e.credibility ?? e.credibilityScore ?? 0), 0) / corroborationOnly.length
         : 0;
       
       claim.evidenceSummary = {
-        totalSources: claim.evidence.length,
+        totalSources: corroborationOnly.length,
         uniqueDomains,
-        supportingCount: claim.evidence.filter(e => e.stanceTowardsClaim === 'supports').length,
-        refutingCount: claim.evidence.filter(e => e.stanceTowardsClaim === 'refutes').length,
+        supportingCount: corroborationOnly.filter(e => (e.stance ?? (e.stanceTowardsClaim === 'supports' ? 'support' : 'unclear')) === 'support').length,
+        refutingCount: corroborationOnly.filter(e => (e.stance ?? (e.stanceTowardsClaim === 'refutes' ? 'refute' : 'unclear')) === 'refute').length,
         averageCredibility: avgCredibility,
       };
     }
 
-    // 4) Analyze tactics + verdicts based on evidence
+    // 4) Analyze tactics + rebuttal.
+    // IMPORTANT: manipulation/tactics analysis must NOT depend on evidence retrieval.
+    const tacticsInputText = inputIsUrl
+      ? (fullArticleText ? `Title: ${articleMeta.title || ''}\n\n${fullArticleText}` : urlContext)
+      : input;
+
     const analysisResp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
           content: [
-            "You are an evidence-first misinformation assistant.",
-            "Rules:",
-            "1) Identify persuasion/manipulation tactics in the input (separate from factual accuracy).",
-            "2) For each claim, judge using the provided evidence and stance analysis.",
-            "3) Consider evidence credibility and relevance scores.",
-            "4) Use calm empowering language. No insults.",
+            "You are a careful language-analysis assistant.",
+            "Task:",
+            "1) Identify persuasion/manipulation tactics in the provided text. This is NOT a factual verdict.",
+            "2) Provide a calm, de-escalating rebuttal paragraph that encourages verification.",
+            "Do not refer to external sources or evidence.",
             "",
             "Return JSON ONLY in this exact shape:",
             "{",
             "  tactics: { score_0_to_100: number, flags: string[], explanation: string },",
-            "  claims: Array<{",
-            "    claim: string,",
-            "    verdict: 'Supported'|'Mixed'|'Not supported'|'Insufficient evidence',",
-            "    confidence: number (0-1),",
-            "    reasoning: string",
-            "  }>,",
             "  rebuttal: { short: string, medium?: string }",
             "}",
           ].join("\n"),
@@ -245,22 +453,7 @@ export async function POST(req: Request) {
         {
           role: "user",
           content: JSON.stringify({
-            input: inputIsUrl ? urlContext : input,
-            claims: claims.map((c) => ({
-              text: c.text,
-              type: c.type,
-              checkability: c.checkability,
-              evidence: c.evidence.map((e) => ({
-                title: e.title,
-                url: e.url,
-                snippet: e.snippet,
-                credibilityScore: e.credibilityScore,
-                relevanceScore: e.relevanceScore,
-                stance: e.stanceTowardsClaim,
-                keyQuote: e.keyQuote,
-              })),
-              evidenceSummary: c.evidenceSummary,
-            })),
+            input: tacticsInputText,
           }),
         },
       ],
@@ -269,23 +462,7 @@ export async function POST(req: Request) {
 
     const analysisResult = JSON.parse(analysisResp.choices[0]?.message?.content || "{}");
 
-    // 5) Update claims with verdicts and reasoning
-    for (let i = 0; i < claims.length; i++) {
-      const analysisClaim = analysisResult.claims?.[i];
-      if (analysisClaim) {
-        claims[i].verdict = analysisClaim.verdict || 'Insufficient evidence';
-        claims[i].verdictConfidence = analysisClaim.confidence || 0;
-        claims[i].reasoning = analysisClaim.reasoning || '';
-        
-        // Override to "Insufficient evidence" if not enough unique domains
-        if (claims[i].evidenceSummary.uniqueDomains < 2) {
-          claims[i].verdict = 'Insufficient evidence';
-        }
-      }
-    }
-
-    // 6) Calculate overall verifiability
-    const overallVerifiability = calculateOverallVerifiability(claims);
+    // 5) We keep tactics + rebuttal from the LLM, but derive claim verdicts deterministically.
 
     // 7) Generate smart searches for each claim based on evidence gaps
     for (const claim of claims) {
@@ -293,8 +470,47 @@ export async function POST(req: Request) {
       claim.suggestedSearches = generateSmartSearches(claim, gaps, inputDomain || undefined);
     }
 
-    // 8) Build response with new structure
-    const overall_score = calculateOverallVerifiability(claims);
+    // 8) Apply stance guardrails, recompute summaries, and set deterministic verdicts
+    const retrievalStateForClaims: 'NOT_RUN' | 'RAN_NO_RESULTS' | 'RAN_WITH_RESULTS' =
+      !searchEnabled
+        ? 'NOT_RUN'
+        : claims.some((c) => (c.evidence || []).some((e) => e.role !== 'INPUT'))
+          ? 'RAN_WITH_RESULTS'
+          : 'RAN_NO_RESULTS';
+
+    for (const claim of claims) {
+      const inputEvidence = (claim.evidence || []).filter((e) => e.role === 'INPUT');
+      const corroborationEvidence = (claim.evidence || []).filter((e) => e.role !== 'INPUT');
+
+      const guardedCorroboration = applyStanceGuardrails(claim.text, claim.type, corroborationEvidence);
+      claim.evidence = [...inputEvidence, ...guardedCorroboration];
+
+      const corroborationOnly = (claim.evidence || []).filter((e) => e.role !== 'INPUT');
+      const uniqueDomains = new Set(
+        corroborationOnly
+          .map((e) => e.domain || getBaseDomain(e.url) || e.publisher)
+          .filter(Boolean)
+      ).size;
+      const avgCredibility = corroborationOnly.length > 0
+        ? corroborationOnly.reduce((sum, e) => sum + (e.credibility ?? 0), 0) / corroborationOnly.length
+        : 0;
+
+      claim.evidenceSummary = {
+        totalSources: corroborationOnly.length,
+        uniqueDomains,
+        supportingCount: corroborationOnly.filter((e) => e.stance === 'support').length,
+        refutingCount: corroborationOnly.filter((e) => e.stance === 'refute').length,
+        averageCredibility: avgCredibility,
+      };
+
+      const derived = deriveDeterministicVerdict(claim, retrievalStateForClaims);
+      claim.verdict = derived.verdict;
+      claim.verdictConfidence = derived.verdictConfidence;
+      claim.reasoning = derived.reasoning;
+    }
+
+    // 9) Build response with new structure
+    const overall_score = calculateOverallVerifiability(claims, searchEnabled);
     
     const response: AnalysisResult = {
       article_meta: articleMeta,
@@ -304,15 +520,18 @@ export async function POST(req: Request) {
         importance: c.importance,
         checkability: c.checkability,
         evidence: c.evidence.map(e => ({
+          role: e.role,
           url: e.url,
           title: e.title,
           publisher: e.publisher,
+          domain: e.domain,
           published_at: e.published_at,
-          snippet: e.snippet,
+          snippet: stripHtml(e.snippet || ''),
+          stance: e.stance,
+          credibility: e.credibility,
           supports_claim: e.supports_claim,
           confidence: e.confidence,
           // Legacy fields
-          domain: e.domain,
           age: e.age,
           relevanceScore: e.relevanceScore,
           credibilityScore: e.credibilityScore,
@@ -333,14 +552,25 @@ export async function POST(req: Request) {
         input_domain: inputDomain || null,
         brave_key_present: !!process.env.BRAVE_SEARCH_API_KEY,
         input_is_url: inputIsUrl,
+        claim_checkability: claims.map((c) => {
+          const analyzed = analyzeCheckability(c.text, c.type);
+          return {
+            text: c.text,
+            type: c.type,
+            checkability: c.checkability,
+            baseline: analyzed.features.baseline,
+            features: analyzed.features,
+          };
+        }),
       },
     };
 
     return Response.json(response);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("ANALYZE ERROR:", err);
+    const details = err instanceof Error ? err.message : String(err);
     return Response.json(
-      { error: "Server error", details: err?.message || String(err) },
+      { error: "Server error", details },
       { status: 500 }
     );
   }

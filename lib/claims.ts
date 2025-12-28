@@ -7,41 +7,173 @@ type RawClaimExtraction = {
   importance: number;
 };
 
-export function assessCheckability(claimText: string): number {
-  const text = claimText.toLowerCase();
-  
-  // High checkability indicators
-  const factualIndicators = [
-    /\d+/,  // contains numbers
-    /percent|%/,
-    /said|announced|reported|stated/,
-    /according to/,
-    /study|research|data|statistics/,
-    /year|date|month|day/,
+function clamp01(n: number): number {
+  return Math.max(0.1, Math.min(1.0, n));
+}
+
+function clampCheckability(n: number): number {
+  // Spec: cap at 95, floor at 20
+  return Math.max(0.2, Math.min(0.95, n));
+}
+
+function baselineCheckabilityForType(type: ClaimType): number {
+  // User-specified baselines
+  if (type === 'EVENT') return 0.7;
+  if (type === 'QUOTE') return 0.6;
+  if (type === 'SCHEDULE') return 0.55;
+
+  // Conservative defaults for other claim types
+  if (type === 'POLICY') return 0.65;
+  return 0.55;
+}
+
+function detectNamedActors(original: string): { hasNamedActor: boolean; count: number } {
+  // Heuristic: count capitalized token sequences (names/orgs), excluding common sentence starters.
+  const stop = new Set([
+    'The','A','An','This','That','It','In','On','At','After','Before','During','For','With','Without','By','From','To','As','And','Or','But',
+    // Common pronouns/indefinite subjects that shouldn't count as named actors
+    'I','You','We','He','She','They','Someone','Somebody','Something','Anyone','Anybody','Anything','Everyone','Everybody','Everything','Noone','Nobody','Nothing',
+    'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday',
+    'January','February','March','April','May','June','July','August','September','October','November','December',
+  ]);
+
+  const matches = original.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g) ?? [];
+  const filtered = matches
+    .map((m) => m.trim())
+    .filter((m) => m.length >= 3)
+    .filter((m) => !stop.has(m));
+
+  // Avoid over-counting: cap at 3 since we only need presence/rough richness
+  const count = Math.min(filtered.length, 3);
+  return { hasNamedActor: count > 0, count };
+}
+
+type TimeReferenceStrength = 'none' | 'weak' | 'strong';
+
+function hasVeryWeakTimeWords(textLower: string): boolean {
+  return /\b(recently|soon|sometime)\b/.test(textLower);
+}
+
+function getTimeReferenceStrength(textLower: string): TimeReferenceStrength {
+  const strongPatterns: RegExp[] = [
+    /\b\d{4}\b/, // year
+    /\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/, // 12/28/2025
+    /\b\d{1,2}(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/, // 3 March
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:,\s*\d{4})?\b/, // March 3, 2024
   ];
-  
-  // Low checkability indicators
-  const opinionIndicators = [
-    /believe|think|feel|seem|appear/,
-    /should|could|might|may/,
-    /probably|possibly|likely/,
-    /good|bad|better|worse/,
-    /beautiful|ugly|great|terrible/,
+
+  const weakPatterns: RegExp[] = [
+    /\b(today|yesterday|tomorrow|tonight)\b/,
+    /\bthis\s+(morning|afternoon|evening|week|month|year)\b/,
+    /\b(last|next)\s+(week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/,
+    /\b\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago\b/,
+    // Very weak / vague time references are handled separately via hasVeryWeakTimeWords
   ];
-  
-  let score = 0.5; // baseline
-  
-  // Increase for factual indicators
-  for (const pattern of factualIndicators) {
-    if (pattern.test(text)) score += 0.1;
+
+  if (strongPatterns.some((p) => p.test(textLower))) return 'strong';
+  if (weakPatterns.some((p) => p.test(textLower))) return 'weak';
+  return 'none';
+}
+
+function hasLocationCue(original: string): boolean {
+  // Heuristic: common prepositions or travel/event verbs + Capitalized phrase
+  // Examples: "in Paris", "at the White House", "visited Paris", "arrived in Berlin"
+  return /\b(in|at|near|outside|inside|visited|visiting|arrived\s+in|traveled\s+to|travelled\s+to)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b/.test(original);
+}
+
+function detectDirectQuote(original: string): boolean {
+  // Double quotes or curly quotes with at least a few characters inside
+  return /(?:"[^"\n]{5,}"|“[^”\n]{5,}”)/.test(original);
+}
+
+function hasSpeakerCue(textLower: string): boolean {
+  return /\b(said|says|told|stated|announced|wrote|posted|according\s+to)\b/.test(textLower);
+}
+
+function detectScheduleParticipants(textLower: string, namedActorCount: number): boolean {
+  if (namedActorCount >= 2) return true;
+  return /\b(vs\.?|versus|between|with|alongside|meet(?:s|ing)?\s+with)\b/.test(textLower);
+}
+
+function detectVenueCue(original: string, textLower: string): boolean {
+  const venueKeywords = [
+    'stadium','arena','hall','center','centre','conference','summit','meeting','hearing','court','courthouse',
+    'capitol','parliament','white house','un','united nations','g7','g20','nato',
+  ];
+  if (venueKeywords.some((k) => textLower.includes(k))) return true;
+
+  // "at <Proper Noun>" / "in <Proper Noun>" style
+  return /\b(at|in)\s+(?:the\s+)?[A-Z][^,.;]{3,60}/.test(original);
+}
+
+export type CheckabilityFeatures = {
+  baseline: number;
+  namedActors: { present: boolean; count: number };
+  time: { strength: TimeReferenceStrength; veryWeak: boolean };
+  locationCue: boolean;
+  quote: { hasQuoteText: boolean; hasSpeakerCue: boolean };
+  schedule: { hasParticipantsCue: boolean; hasVenueCue: boolean };
+  vaguenessHits: string[];
+};
+
+export function analyzeCheckability(claimText: string, claimType: ClaimType = 'OTHER'): {
+  score: number;
+  features: CheckabilityFeatures;
+} {
+  const original = claimText || '';
+  const textLower = original.toLowerCase();
+
+  let score = baselineCheckabilityForType(claimType);
+
+  // Specificity factors
+  const { hasNamedActor, count: namedActorCount } = detectNamedActors(original);
+  const timeStrength = getTimeReferenceStrength(textLower);
+  const veryWeakTime = hasVeryWeakTimeWords(textLower);
+
+  // +10 if claim has specific named actor(s)
+  if (hasNamedActor) score += 0.10;
+
+  const locationCue = claimType === 'EVENT' ? hasLocationCue(original) : false;
+  // +10 if has specific location (EVENT)
+  if (locationCue) score += 0.10;
+
+  // +10 if has date/time reference (EVENT/SCHEDULE)
+  const hasDateTimeRef = (claimType === 'EVENT' || claimType === 'SCHEDULE') && timeStrength !== 'none';
+  if (hasDateTimeRef) score += 0.10;
+
+  const hasQuoteText = claimType === 'QUOTE' ? detectDirectQuote(original) : false;
+  const speakerCuePresent = claimType === 'QUOTE' ? hasSpeakerCue(textLower) && hasNamedActor : false;
+  if (claimType === 'QUOTE') {
+    // +10 if quote text is present with a named speaker (QUOTE)
+    if (hasQuoteText && speakerCuePresent) score += 0.10;
   }
-  
-  // Decrease for opinion indicators
-  for (const pattern of opinionIndicators) {
-    if (pattern.test(text)) score -= 0.1;
-  }
-  
-  return Math.max(0.1, Math.min(1.0, score));
+
+  // Keep feature extraction for debugging/introspection; scoring is spec-driven.
+  const scheduleParticipants = claimType === 'SCHEDULE'
+    ? detectScheduleParticipants(textLower, namedActorCount)
+    : false;
+  const scheduleVenue = claimType === 'SCHEDULE' ? detectVenueCue(original, textLower) : false;
+  const vaguenessHits: string[] = [];
+
+  const baseline = baselineCheckabilityForType(claimType);
+  const clamped = clampCheckability(score);
+
+  return {
+    score: clamped,
+    features: {
+      baseline,
+      namedActors: { present: hasNamedActor, count: namedActorCount },
+      time: { strength: timeStrength, veryWeak: veryWeakTime },
+      locationCue,
+      quote: { hasQuoteText, hasSpeakerCue: speakerCuePresent },
+      schedule: { hasParticipantsCue: scheduleParticipants, hasVenueCue: scheduleVenue },
+      vaguenessHits,
+    },
+  };
+}
+
+export function assessCheckability(claimText: string, claimType: ClaimType = 'OTHER'): number {
+  return analyzeCheckability(claimText, claimType).score;
 }
 
 export function rankClaimImportance(claims: Claim[], textLength: number): Claim[] {
@@ -62,6 +194,7 @@ export async function extractStructuredClaims(
           role: 'system',
           content: [
             'Extract 3-6 checkable claims from the text.',
+            'Do NOT extract claims about the publisher/outlet, authorship, URL/canonical URL, or that an article was published by X. Those belong to source metadata, not factual claims.',
             'For each claim, provide:',
             '- text: the claim statement',
             '- type: "QUOTE" (someone said X), "EVENT" (X happened), "SCHEDULE" (X will happen), "POLICY" (rule/law/decision), or "OTHER"',
@@ -83,13 +216,16 @@ export async function extractStructuredClaims(
       ? result.claims.slice(0, 6)
       : [];
     
-    return rawClaims.map(raw => ({
-      text: raw.text || '',
-      type: ['QUOTE', 'EVENT', 'SCHEDULE', 'POLICY', 'OTHER'].includes(raw.type)
+    return rawClaims.map(raw => {
+      const type: ClaimType = ['QUOTE', 'EVENT', 'SCHEDULE', 'POLICY', 'OTHER'].includes(raw.type)
         ? (raw.type as ClaimType)
-        : 'OTHER',
+        : 'OTHER';
+
+      return {
+        text: raw.text || '',
+        type,
       importance: typeof raw.importance === 'number' ? raw.importance : 0.5,
-      checkability: assessCheckability(raw.text || ''),
+        checkability: assessCheckability(raw.text || '', type),
       evidence: [],
       verdict: 'Insufficient evidence' as const,
       verdictConfidence: 0,
@@ -102,7 +238,8 @@ export async function extractStructuredClaims(
         averageCredibility: 0,
       },
       suggestedSearches: [],
-    }));
+      };
+    });
   } catch (error) {
     console.error('Error extracting structured claims:', error);
     return [];

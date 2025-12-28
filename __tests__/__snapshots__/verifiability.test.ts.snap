@@ -1,0 +1,79 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Verifiability Scoring calculateOverallVerifiability snapshot: EVIDENCE_FOUND status with evidence 1`] = `
+{
+  "breakdown": {
+    "attribution": Any<Number>,
+    "claimCheckability": Any<Number>,
+    "corroboration_1": Any<Number>,
+    "corroboration_2plus": Any<Number>,
+    "evidenceQuality": Any<Number>,
+    "sourceCredibility": Any<Number>,
+    "specificity": Any<Number>,
+  },
+  "confidence": Any<Number>,
+  "retrieval_reason": "Search returned evidence results.",
+  "retrieval_state": "RAN_WITH_RESULTS",
+  "score": Any<Number>,
+  "status": "EVIDENCE_FOUND",
+}
+`;
+
+exports[`Verifiability Scoring calculateOverallVerifiability snapshot: NO_EVIDENCE_FOUND status 1`] = `
+{
+  "breakdown": {
+    "attribution": 0,
+    "claimCheckability": null,
+    "corroboration_1": 0,
+    "corroboration_2plus": 0,
+    "evidenceQuality": null,
+    "sourceCredibility": null,
+    "specificity": 0,
+  },
+  "confidence": null,
+  "message": "No corroboration found.",
+  "retrieval_reason": "Search was attempted but returned 0 evidence results.",
+  "retrieval_state": "RAN_NO_RESULTS",
+  "score": null,
+  "status": "NO_EVIDENCE_FOUND",
+}
+`;
+
+exports[`Verifiability Scoring calculateOverallVerifiability snapshot: NOT_RUN status when search disabled 1`] = `
+{
+  "breakdown": {
+    "attribution": 0,
+    "claimCheckability": null,
+    "corroboration_1": 0,
+    "corroboration_2plus": 0,
+    "evidenceQuality": null,
+    "sourceCredibility": null,
+    "specificity": 0,
+  },
+  "confidence": null,
+  "message": "Evidence retrieval not run",
+  "retrieval_reason": "missing API key",
+  "retrieval_state": "NOT_RUN",
+  "score": null,
+  "status": "NOT_RUN",
+}
+`;
+
+exports[`Verifiability Scoring calculateOverallVerifiability snapshot: complex multi-claim scenario 1`] = `
+{
+  "breakdown": {
+    "attribution": Any<Number>,
+    "claimCheckability": Any<Number>,
+    "corroboration_1": Any<Number>,
+    "corroboration_2plus": Any<Number>,
+    "evidenceQuality": Any<Number>,
+    "sourceCredibility": Any<Number>,
+    "specificity": Any<Number>,
+  },
+  "confidence": Any<Number>,
+  "retrieval_reason": "Search returned evidence results.",
+  "retrieval_state": "RAN_WITH_RESULTS",
+  "score": Any<Number>,
+  "status": "EVIDENCE_FOUND",
+}
+`;

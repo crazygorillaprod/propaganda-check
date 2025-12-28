@@ -42,8 +42,9 @@ export default function AnalyzeClient() {
       } else {
         setResult(json)
       }
-    } catch (err: any) {
-      setError(err?.message || String(err))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(message)
     } finally {
       setLoading(false)
     }
