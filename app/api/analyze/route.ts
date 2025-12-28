@@ -32,6 +32,30 @@ type BraveWeb = {
 
 type Source = { title: string; url: string; snippet?: string; age?: string };
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+function isTacticsShape(value: unknown): value is AnalysisResult['tactics'] {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.score_0_to_100 === 'number' &&
+    isStringArray(value.flags) &&
+    typeof value.explanation === 'string'
+  );
+}
+
+function isRebuttalShape(value: unknown): value is NonNullable<AnalysisResult['rebuttal']> {
+  if (!isObject(value)) return false;
+  if (typeof value.short !== 'string') return false;
+  if (value.medium !== undefined && typeof value.medium !== 'string') return false;
+  return true;
+}
+
 function isUrl(s: string) {
   try {
     const u = new URL(s);
@@ -491,6 +515,13 @@ export async function POST(req: Request) {
       };
     }
 
+    const defaultTactics: AnalysisResult['tactics'] = { score_0_to_100: 0, flags: [], explanation: "" };
+    const defaultRebuttal: NonNullable<AnalysisResult['rebuttal']> = { short: "" };
+
+    const analysisObj = isObject(analysisResult) ? analysisResult : {};
+    const normalizedTactics = isTacticsShape(analysisObj.tactics) ? analysisObj.tactics : defaultTactics;
+    const normalizedRebuttal = isRebuttalShape(analysisObj.rebuttal) ? analysisObj.rebuttal : defaultRebuttal;
+
     // 5) We keep tactics + rebuttal from the LLM, but derive claim verdicts deterministically.
 
     // 7) Generate smart searches for each claim based on evidence gaps
@@ -575,8 +606,8 @@ export async function POST(req: Request) {
       })),
       overall_score,
       overallVerifiability: overall_score, // Legacy field for backward compatibility
-      tactics: analysisResult?.tactics ?? { score_0_to_100: 0, flags: [], explanation: "" },
-      rebuttal: analysisResult?.rebuttal ?? { short: "" },
+      tactics: normalizedTactics,
+      rebuttal: normalizedRebuttal,
       debug: {
         input_domain: inputDomain || null,
         brave_key_present: !!process.env.BRAVE_SEARCH_API_KEY,
