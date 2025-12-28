@@ -431,36 +431,65 @@ export async function POST(req: Request) {
       ? (fullArticleText ? `Title: ${articleMeta.title || ''}\n\n${fullArticleText}` : urlContext)
       : input;
 
-    const analysisResp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You are a careful language-analysis assistant.",
-            "Task:",
-            "1) Identify persuasion/manipulation tactics in the provided text. This is NOT a factual verdict.",
-            "2) Provide a calm, de-escalating rebuttal paragraph that encourages verification.",
-            "Do not refer to external sources or evidence.",
-            "",
-            "Return JSON ONLY in this exact shape:",
-            "{",
-            "  tactics: { score_0_to_100: number, flags: string[], explanation: string },",
-            "  rebuttal: { short: string, medium?: string }",
-            "}",
-          ].join("\n"),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            input: tacticsInputText,
-          }),
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+    // If we don't have enough text to analyze, avoid hallucinating tactics.
+    // (URL context strings are often too short and lead to overconfident outputs.)
+    let analysisResult: unknown = null;
+    const hasEnoughTextForTactics = tacticsInputText.trim().length >= 600;
 
-    const analysisResult = JSON.parse(analysisResp.choices[0]?.message?.content || "{}");
+    if (hasEnoughTextForTactics) {
+      const analysisResp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are a careful, conservative language-analysis assistant.",
+              "Your job is to assess wording and framing (rhetoric), NOT factual accuracy.",
+              "",
+              "Rules:",
+              "- Be conservative: neutral, journalistic reporting should usually score low (0-30) with few/no flags.",
+              "- Only include a flag if you can quote an exact short phrase from the input that supports it.",
+              "- If a risky phrase appears only in an attributed quote (e.g., inside quotation marks or clearly reported speech),",
+              "  do NOT treat it as the author's tactic; you may still mention it but down-weight severity.",
+              "- Use calm, non-accusatory language; avoid moral judgments.",
+              "- Do not refer to external sources or evidence.",
+              "",
+              "Task:",
+              "1) Identify persuasion/manipulation tactics present in the provided text.",
+              "2) Provide a calm, de-escalating rebuttal paragraph that encourages verification.",
+              "",
+              "Return JSON ONLY in this exact shape:",
+              "{",
+              "  tactics: { score_0_to_100: number, flags: string[], explanation: string },",
+              "  rebuttal: { short: string, medium?: string }",
+              "}",
+              "",
+              "In tactics.explanation, briefly justify each flag by quoting the exact phrase(s) in double quotes.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              input: tacticsInputText,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      analysisResult = JSON.parse(analysisResp.choices[0]?.message?.content || "{}");
+    } else {
+      analysisResult = {
+        tactics: {
+          score_0_to_100: 0,
+          flags: [],
+          explanation: "Not enough article text was available to assess language framing.",
+        },
+        rebuttal: {
+          short: "Consider checking primary documents and multiple outlets before drawing conclusions.",
+        },
+      };
+    }
 
     // 5) We keep tactics + rebuttal from the LLM, but derive claim verdicts deterministically.
 
