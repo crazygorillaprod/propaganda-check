@@ -1,4 +1,13 @@
 import OpenAI from "openai";
+import { Claim, AnalysisResult } from "@/lib/types";
+import { fetchArticleMeta } from "@/lib/article-meta";
+import { extractStructuredClaims, rankClaimImportance } from "@/lib/claims";
+import { scoreEvidence, analyzeSourceStance } from "@/lib/evidence";
+import {
+  calculateOverallVerifiability,
+  identifyEvidenceGaps,
+  generateSmartSearches,
+} from "@/lib/verifiability";
 
 export const runtime = "nodejs";
 
@@ -155,11 +164,16 @@ export async function POST(req: Request) {
     const inputIsUrl = isUrl(input.trim());
     const inputDomain = inputIsUrl ? getBaseDomain(input.trim()) : "";
 
-    // If user pasted a URL, we do a first search on it to get a title/snippet context.
+    // 1) Fetch article metadata for URLs
+    let articleMeta: any = { sourceType: 'unknown' as const };
     let urlContext = "";
+    
     if (inputIsUrl) {
       const { results: firstHits } = await braveSearch(input.trim(), []);
       const hit = firstHits.find((h) => getBaseDomain(h.url) === inputDomain) || firstHits[0];
+      
+      articleMeta = await fetchArticleMeta(input.trim(), hit);
+      
       if (hit) {
         urlContext = `URL: ${input.trim()}\nTitle: ${hit.title}\nSnippet: ${hit.snippet}`;
       } else {
@@ -169,35 +183,39 @@ export async function POST(req: Request) {
 
     const claimExtractionText = inputIsUrl ? urlContext : input.trim();
 
-    // 1) Extract checkable claims
-    const claimsResp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Extract 3-6 checkable factual claims from the text. Return JSON ONLY: { claims: string[] }",
-        },
-        { role: "user", content: claimExtractionText },
-      ],
-      response_format: { type: "json_object" },
-    });
+    // 2) Extract structured claims with importance and checkability
+    let claims = await extractStructuredClaims(claimExtractionText, openai);
+    claims = rankClaimImportance(claims, input.length);
 
-    const claimsJson = JSON.parse(claimsResp.choices[0]?.message?.content || "{}");
-    const claims: string[] = Array.isArray(claimsJson.claims)
-      ? claimsJson.claims.map((c: any) => String(c)).slice(0, 6)
-      : [];
+    // 3) Retrieve and score evidence for each claim
+    for (const claim of claims) {
+      const { usedQuery, results: sources } = await braveSearch(
+        claim.text,
+        inputDomain ? [inputDomain] : []
+      );
+      
+      // Score evidence for relevance and credibility
+      claim.evidence = await scoreEvidence(claim.text, sources.slice(0, 6));
+      
+      // Analyze stance of each source (supports/refutes/neutral)
+      claim.evidence = await analyzeSourceStance(claim.text, claim.evidence, openai);
+      
+      // Calculate evidence summary
+      const uniqueDomains = new Set(claim.evidence.map(e => e.domain)).size;
+      const avgCredibility = claim.evidence.length > 0
+        ? claim.evidence.reduce((sum, e) => sum + e.credibilityScore, 0) / claim.evidence.length
+        : 0;
+      
+      claim.evidenceSummary = {
+        totalSources: claim.evidence.length,
+        uniqueDomains,
+        supportingCount: claim.evidence.filter(e => e.stanceTowardsClaim === 'supports').length,
+        refutingCount: claim.evidence.filter(e => e.stanceTowardsClaim === 'refutes').length,
+        averageCredibility: avgCredibility,
+      };
+    }
 
-    // 2) Retrieve evidence for each claim, excluding the original domain if input was a URL
-    const bundles = await Promise.all(
-      claims.map(async (claim) => {
-        const { usedQuery, results: sources } = await braveSearch(claim, inputDomain ? [inputDomain] : []);
-        // Keep max 6 raw; later we dedupe for citations
-        return { claim, sources: sources.slice(0, 6), debug: { usedQuery, sourceCount: sources.length } };
-      })
-    );
-
-    // 3) Analyze tactics + verdicts based ONLY on provided sources
+    // 4) Analyze tactics + verdicts based on evidence
     const analysisResp = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -207,10 +225,9 @@ export async function POST(req: Request) {
             "You are an evidence-first misinformation assistant.",
             "Rules:",
             "1) Identify persuasion/manipulation tactics in the input (separate from factual accuracy).",
-            "2) For each claim, judge ONLY using the provided sources for that claim.",
-            "3) If sources are missing/weak/irrelevant OR fewer than 2 independent domains, verdict MUST be 'Insufficient evidence'.",
-            "4) Do NOT cite category/tag/hub pages, homepages, or privacy/terms pages.",
-            "5) Use calm empowering language. No insults.",
+            "2) For each claim, judge using the provided evidence and stance analysis.",
+            "3) Consider evidence credibility and relevance scores.",
+            "4) Use calm empowering language. No insults.",
             "",
             "Return JSON ONLY in this exact shape:",
             "{",
@@ -218,10 +235,10 @@ export async function POST(req: Request) {
             "  claims: Array<{",
             "    claim: string,",
             "    verdict: 'Supported'|'Mixed'|'Not supported'|'Insufficient evidence',",
+            "    confidence: number (0-1),",
             "    reasoning: string",
             "  }>,",
-            "  rebuttal: { short: string, medium?: string },",
-            "  research_guidance: { verifiability_0_to_100: number, suggested_searches: string[] }",
+            "  rebuttal: { short: string, medium?: string }",
             "}",
           ].join("\n"),
         },
@@ -229,14 +246,20 @@ export async function POST(req: Request) {
           role: "user",
           content: JSON.stringify({
             input: inputIsUrl ? urlContext : input,
-            bundles: bundles.map((b) => ({
-              claim: b.claim,
-              sources: b.sources.map((s) => ({
-                title: s.title,
-                url: s.url,
-                snippet: s.snippet,
-                age: s.age,
+            claims: claims.map((c) => ({
+              text: c.text,
+              type: c.type,
+              checkability: c.checkability,
+              evidence: c.evidence.map((e) => ({
+                title: e.title,
+                url: e.url,
+                snippet: e.snippet,
+                credibilityScore: e.credibilityScore,
+                relevanceScore: e.relevanceScore,
+                stance: e.stanceTowardsClaim,
+                keyQuote: e.keyQuote,
               })),
+              evidenceSummary: c.evidenceSummary,
             })),
           }),
         },
@@ -244,56 +267,64 @@ export async function POST(req: Request) {
       response_format: { type: "json_object" },
     });
 
-    const out = JSON.parse(analysisResp.choices[0]?.message?.content || "{}");
+    const analysisResult = JSON.parse(analysisResp.choices[0]?.message?.content || "{}");
 
-    // 4) Attach cleaned citations per claim and enforce 2-domain minimum
-    const shapedClaims = (Array.isArray(out?.claims) ? out.claims : []).map((c: any) => {
-      const bundle = bundles.find((b) => b.claim === c.claim);
-      const rawSources = bundle?.sources ?? [];
-      const citations = dedupeByDomain(rawSources, 4);
-      const uniqueDomains = countUniqueDomains(citations);
-
-      let verdict = c?.verdict;
-      if (!citations.length || uniqueDomains < 2) {
-        verdict = "Insufficient evidence";
+    // 5) Update claims with verdicts and reasoning
+    for (let i = 0; i < claims.length; i++) {
+      const analysisClaim = analysisResult.claims?.[i];
+      if (analysisClaim) {
+        claims[i].verdict = analysisClaim.verdict || 'Insufficient evidence';
+        claims[i].verdictConfidence = analysisClaim.confidence || 0;
+        claims[i].reasoning = analysisClaim.reasoning || '';
+        
+        // Override to "Insufficient evidence" if not enough unique domains
+        if (claims[i].evidenceSummary.uniqueDomains < 2) {
+          claims[i].verdict = 'Insufficient evidence';
+        }
       }
-
-      return {
-        claim: c?.claim || bundle?.claim || "",
-        verdict,
-        reasoning: String(c?.reasoning || ""),
-        citations: citations.map((s) => ({ title: s.title, url: s.url })),
-        domain_count: uniqueDomains,
-      };
-    });
-
-    const suggestedSearches: string[] = [];
-    const base = inputIsUrl ? claimExtractionText : input.trim();
-    if (inputIsUrl && base) {
-      suggestedSearches.push(base.split("\n")[1]?.replace(/^Title:\s*/, "") || "Fact check this article");
-    }
-    for (const cl of claims.slice(0, 3)) {
-      suggestedSearches.push(`${cl} fact check`);
-      if (inputDomain) suggestedSearches.push(`${cl} -site:${inputDomain}`);
-      suggestedSearches.push(`site:.gov ${cl}`);
     }
 
-    const response = {
-      tactics: out?.tactics ?? { score_0_to_100: 0, flags: [], explanation: "" },
-      claims: shapedClaims,
-      rebuttal: out?.rebuttal ?? { short: "" },
-      research_guidance: out?.research_guidance ?? {
-        verifiability_0_to_100: 70,
-        suggested_searches: suggestedSearches.slice(0, 8),
-      },
-      meta: {
-        input_is_url: inputIsUrl,
-        excluded_domain: inputDomain || null,
-      },
+    // 6) Calculate overall verifiability
+    const overallVerifiability = calculateOverallVerifiability(claims);
+
+    // 7) Generate smart searches for each claim based on evidence gaps
+    for (const claim of claims) {
+      const gaps = identifyEvidenceGaps(claim);
+      claim.suggestedSearches = generateSmartSearches(claim, gaps, inputDomain || undefined);
+    }
+
+    // 8) Build response with new structure
+    const response: AnalysisResult = {
+      articleMeta,
+      claims: claims.map(c => ({
+        text: c.text,
+        type: c.type,
+        importance: c.importance,
+        checkability: c.checkability,
+        evidence: c.evidence.map(e => ({
+          url: e.url,
+          title: e.title,
+          snippet: e.snippet,
+          domain: e.domain,
+          age: e.age,
+          relevanceScore: e.relevanceScore,
+          credibilityScore: e.credibilityScore,
+          stanceTowardsClaim: e.stanceTowardsClaim,
+          keyQuote: e.keyQuote,
+        })),
+        verdict: c.verdict,
+        verdictConfidence: c.verdictConfidence,
+        reasoning: c.reasoning,
+        evidenceSummary: c.evidenceSummary,
+        suggestedSearches: c.suggestedSearches,
+      })),
+      overallVerifiability,
+      tactics: analysisResult?.tactics ?? { score_0_to_100: 0, flags: [], explanation: "" },
+      rebuttal: analysisResult?.rebuttal ?? { short: "" },
       debug: {
         input_domain: inputDomain || null,
         brave_key_present: !!process.env.BRAVE_SEARCH_API_KEY,
-        bundles: bundles.map((b) => ({ claim: b.claim, ...b.debug })),
+        input_is_url: inputIsUrl,
       },
     };
 
