@@ -191,9 +191,9 @@ export async function POST(req: Request) {
     // 2) Retrieve evidence for each claim, excluding the original domain if input was a URL
     const bundles = await Promise.all(
       claims.map(async (claim) => {
-        const { results: sources } = await braveSearch(claim, inputDomain ? [inputDomain] : []);
+        const { usedQuery, results: sources } = await braveSearch(claim, inputDomain ? [inputDomain] : []);
         // Keep max 6 raw; later we dedupe for citations
-        return { claim, sources: sources.slice(0, 6) };
+        return { claim, sources: sources.slice(0, 6), debug: { usedQuery, sourceCount: sources.length } };
       })
     );
 
@@ -289,6 +289,11 @@ export async function POST(req: Request) {
       meta: {
         input_is_url: inputIsUrl,
         excluded_domain: inputDomain || null,
+      },
+      debug: {
+        input_domain: inputDomain || null,
+        brave_key_present: !!process.env.BRAVE_SEARCH_API_KEY,
+        bundles: bundles.map((b) => ({ claim: b.claim, ...b.debug })),
       },
     };
 
