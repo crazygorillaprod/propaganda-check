@@ -32,19 +32,22 @@ function extractLinks(html: string, baseUrl?: string) {
   return Array.from(new Set(links)).slice(0, 10); // limit
 }
 
-function isNoisyUrl(urlString: string) {
+function isJunkUrl(u: string) {
   try {
-    const u = new URL(urlString);
-    const path = (u.pathname || "/").toLowerCase();
-    const noisyPatterns = ["/privacy", "/terms", "/about", "/contact", "/cookie", "/login", "/signup", "/search", "?/", "#", "/index", "/home"];
-    if (path === "/" || path.length <= 2) return true;
-    for (const p of noisyPatterns) {
-      if (path.includes(p)) return true;
-    }
-    // Query-only URLs are noisy
-    if (u.search && u.pathname === "/") return true;
+    const url = new URL(u);
+    const path = url.pathname.toLowerCase();
+
+    // junk paths
+    if (path.includes("/terms")) return true;
+    if (path.includes("/privacy")) return true;
+    if (path.includes("/about")) return true;
+    if (path === "/" || path.length < 2) return true;
+
+    // category/tag pages often useless
+    if (path.split("/").length <= 2) return true; // e.g. /politics
+
     return false;
-  } catch (e) {
+  } catch {
     return true;
   }
 }
@@ -218,7 +221,7 @@ export async function POST(req: Request) {
     }
 
     // Filter noisy links from merged set (drop site roots, /privacy, /terms, etc.)
-    const filtered = merged.filter((s) => s && s.url && !isNoisyUrl(s.url)).slice(0, 10);
+    const filtered = merged.filter((s) => s && s.url && !isJunkUrl(s.url)).slice(0, 10);
 
     // If there are no model/page sources, enrich brave sources with fetched snippets (but operate on filtered list)
     if ((!filtered || filtered.length === 0) && externalSources && externalSources.length > 0) {
