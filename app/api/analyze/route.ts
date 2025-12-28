@@ -371,6 +371,7 @@ export async function POST(req: Request) {
     // sources snippets/titles
     for (let i = 0; i < out.sources.length; i++) {
       const s = out.sources[i];
+      if (s?.url && isBadCitation(s.url)) continue;
       if (s?.snippet) {
         const cs = await checkSensitiveText(s.snippet);
         if (cs.sensitive) {
