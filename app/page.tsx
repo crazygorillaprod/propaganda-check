@@ -47,20 +47,28 @@ export default function Home() {
       </p>
 
       <textarea
-        rows={8}
+        rows={6}
         value={input}
         onChange={(e) => setInput(e.target.value)}
-        placeholder="Paste text here…"
+        placeholder="Paste text or a URL here… (text or url)"
         style={{ width: "100%", marginTop: 16, padding: 12, fontSize: 16 }}
       />
 
-      <button
-        onClick={analyze}
-        disabled={loading || input.trim().length < 10}
-        style={{ marginTop: 12, padding: "10px 16px", fontSize: 16 }}
-      >
-        {loading ? "Analyzing…" : "Analyze"}
-      </button>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button
+          onClick={analyze}
+          disabled={loading || input.trim().length < 10}
+          style={{ padding: "10px 16px", fontSize: 16 }}
+        >
+          {loading ? "Analyzing…" : "Analyze"}
+        </button>
+        <button
+          onClick={() => { setInput(''); setResult(null); setError(''); }}
+          style={{ padding: "10px 12px", fontSize: 14 }}
+        >
+          Clear
+        </button>
+      </div>
 
       {error && <p style={{ color: "crimson", marginTop: 12 }}>{error}</p>}
 
@@ -71,16 +79,43 @@ export default function Home() {
             <b>Score:</b> {result.tactics?.score_0_to_100}/100
           </p>
           <p>
-            <b>Flags:</b> {result.tactics?.flags?.join(", ")}
+            <b>Flags:</b> {result.tactics?.flags?.join(", ") || 'None'}
           </p>
           <p>{result.tactics?.explanation}</p>
 
           <h2 style={{ marginTop: 18 }}>Calm Rebuttal</h2>
           <p>{result.rebuttal?.short}</p>
 
-          <pre style={{ marginTop: 16, padding: 12, background: "#111", color: "#fff" }}>
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <h2 style={{ marginTop: 18 }}>Sources</h2>
+          {result.sources && result.sources.length ? (
+            <ul>
+              {result.sources.map((s: any, i: number) => (
+                <li key={i}>
+                  {s.url ? (
+                    <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
+                  ) : (
+                    <span>{s.title || s.snippet || 'Unnamed source'}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p style={{ opacity: 0.8 }}>No explicit sources were found on the page. Consider searching official sources.</p>
+          )}
+
+          <h3 style={{ marginTop: 12 }}>Research guidance</h3>
+          <p>
+            {result.research_needed ? (
+              <b>This content should be researched further (verifiability {result.verifiability_score}/100).</b>
+            ) : (
+              <b>Content appears highly verifiable (verifiability {result.verifiability_score}/100).</b>
+            )}
+          </p>
+
+          <details style={{ marginTop: 12 }}>
+            <summary>Show raw response</summary>
+            <pre style={{ marginTop: 12, padding: 12, background: "#111", color: "#fff" }}>{JSON.stringify(result, null, 2)}</pre>
+          </details>
         </section>
       )}
     </main>
