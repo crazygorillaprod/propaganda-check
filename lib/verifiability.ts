@@ -1,4 +1,4 @@
-import { Claim, AnalysisResult } from './types';
+import { Claim, ScoreBreakdown } from './types';
 
 export function calculateClaimVerifiability(claim: Claim): number {
   const { evidence, checkability, evidenceSummary } = claim;
@@ -26,7 +26,7 @@ export function calculateClaimVerifiability(claim: Claim): number {
 
 export function calculateOverallVerifiability(
   claims: Claim[]
-): AnalysisResult['overallVerifiability'] {
+): { score: number; confidence: number; breakdown: ScoreBreakdown } {
   if (claims.length === 0) {
     return {
       score: 0,
@@ -94,7 +94,7 @@ export function identifyEvidenceGaps(claim: Claim): string[] {
     gaps.push('unclear-stance');
   }
   
-  if (claim.evidence.some(e => e.relevanceScore < 0.5)) {
+  if (claim.evidence.some(e => e.relevanceScore !== undefined && e.relevanceScore < 0.5)) {
     gaps.push('low-relevance');
   }
   
@@ -132,14 +132,24 @@ export function generateSmartSearches(
   
   // Add specific search for claim type
   switch (claim.type) {
-    case 'factual':
+    case 'QUOTE':
+      searches.push(`"${claimText}" verification`);
+      searches.push(`${claimText} transcript`);
+      break;
+    case 'EVENT':
+      searches.push(`${claimText} news reports`);
+      searches.push(`${claimText} eyewitness`);
+      break;
+    case 'SCHEDULE':
+      searches.push(`${claimText} official announcement`);
+      searches.push(`${claimText} calendar`);
+      break;
+    case 'POLICY':
+      searches.push(`${claimText} official policy`);
+      searches.push(`${claimText} legislation`);
+      break;
+    case 'OTHER':
       searches.push(`${claimText} statistics data`);
-      break;
-    case 'prediction':
-      searches.push(`${claimText} analysis forecast`);
-      break;
-    case 'opinion':
-      searches.push(`${claimText} expert opinion`);
       break;
   }
   

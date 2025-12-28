@@ -104,21 +104,28 @@ export default function Home() {
         <div style={{ marginTop: 32, display: "flex", flexDirection: "column", gap: 20 }}>
           
           {/* Article Meta */}
-          {result.articleMeta?.url && (
+          {(result.article_meta?.canonical_url || result.article_meta?.url) && (
             <div style={{ background: "white", padding: 20, borderRadius: 8, border: "1px solid #e5e7eb" }}>
               <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Source Analysis</div>
-              {result.articleMeta.title && (
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{result.articleMeta.title}</h3>
+              {result.article_meta.title && (
+                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{result.article_meta.title}</h3>
               )}
-              <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
-                <span style={{ color: "#6b7280" }}>Domain: <strong>{result.articleMeta.domain}</strong></span>
-                {result.articleMeta.sourceType && (
+              <div style={{ display: "flex", gap: 12, fontSize: 13, flexWrap: "wrap" }}>
+                <span style={{ color: "#6b7280" }}>
+                  Publisher: <strong>{result.article_meta.publisher || result.article_meta.domain}</strong>
+                </span>
+                {result.article_meta.sourceType && (
                   <span style={{ background: "#e0e7ff", color: "#3730a3", padding: "2px 8px", borderRadius: 4 }}>
-                    {result.articleMeta.sourceType}
+                    {result.article_meta.sourceType}
                   </span>
                 )}
-                {result.articleMeta.publishDate && (
-                  <span style={{ color: "#6b7280" }}>Published: {result.articleMeta.publishDate}</span>
+                {(result.article_meta.published_at || result.article_meta.publishDate) && (
+                  <span style={{ color: "#6b7280" }}>
+                    Published: {result.article_meta.published_at || result.article_meta.publishDate}
+                  </span>
+                )}
+                {result.article_meta.author && (
+                  <span style={{ color: "#6b7280" }}>Author: {result.article_meta.author}</span>
                 )}
               </div>
             </div>
@@ -130,29 +137,29 @@ export default function Home() {
             <div style={{ display: "flex", gap: 24, marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Score</div>
-                <div style={{ fontSize: 32, fontWeight: 700, color: result.overallVerifiability.score > 70 ? "#059669" : result.overallVerifiability.score > 40 ? "#d97706" : "#dc2626" }}>
-                  {result.overallVerifiability.score}/100
+                <div style={{ fontSize: 32, fontWeight: 700, color: (result.overall_score || result.overallVerifiability).score > 70 ? "#059669" : (result.overall_score || result.overallVerifiability).score > 40 ? "#d97706" : "#dc2626" }}>
+                  {(result.overall_score || result.overallVerifiability).score}/100
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 4 }}>Confidence</div>
                 <div style={{ fontSize: 32, fontWeight: 700, color: "#6b7280" }}>
-                  {Math.round(result.overallVerifiability.confidence * 100)}%
+                  {Math.round((result.overall_score || result.overallVerifiability).confidence * 100)}%
                 </div>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Evidence Quality</div>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>{result.overallVerifiability.breakdown.evidenceQuality}%</div>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>{(result.overall_score || result.overallVerifiability).breakdown.evidenceQuality}%</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Source Credibility</div>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>{result.overallVerifiability.breakdown.sourceCredibility}%</div>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>{(result.overall_score || result.overallVerifiability).breakdown.sourceCredibility}%</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 4 }}>Claim Checkability</div>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>{result.overallVerifiability.breakdown.claimCheckability}%</div>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>{(result.overall_score || result.overallVerifiability).breakdown.claimCheckability}%</div>
               </div>
             </div>
           </div>
@@ -236,20 +243,23 @@ export default function Home() {
                             {claim.evidence.slice(0, 4).map((evidence, i) => (
                               <div key={i} style={{ background: "#f9fafb", padding: 10, borderRadius: 6, border: "1px solid #e5e7eb" }}>
                                 <div style={{ display: "flex", alignItems: "start", gap: 8, marginBottom: 4 }}>
-                                  <span style={{ fontSize: 16, color: getStanceColor(evidence.stanceTowardsClaim) }}>
-                                    {getStanceIcon(evidence.stanceTowardsClaim)}
+                                  <span style={{ fontSize: 16, color: evidence.supports_claim ? "#059669" : (evidence.stanceTowardsClaim === 'refutes' ? "#dc2626" : "#6b7280") }}>
+                                    {evidence.supports_claim ? "✓" : (evidence.stanceTowardsClaim === 'refutes' ? "✗" : (evidence.stanceTowardsClaim === 'neutral' ? "○" : "?"))}
                                   </span>
                                   <div style={{ flex: 1 }}>
                                     <a href={evidence.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", fontSize: 13, fontWeight: 500 }}>
                                       {evidence.title}
                                     </a>
-                                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{evidence.domain}</div>
+                                    <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                                      {evidence.publisher || evidence.domain}
+                                      {(evidence.published_at || evidence.age) && ` • ${evidence.published_at || evidence.age}`}
+                                    </div>
                                   </div>
                                 </div>
                                 <div style={{ display: "flex", gap: 12, fontSize: 11, color: "#6b7280", marginTop: 6 }}>
-                                  <span>Relevance: {Math.round(evidence.relevanceScore * 100)}%</span>
-                                  <span>Credibility: {Math.round(evidence.credibilityScore * 100)}%</span>
-                                  {evidence.age && <span>{evidence.age}</span>}
+                                  <span>Confidence: {Math.round(evidence.confidence * 100)}%</span>
+                                  {evidence.relevanceScore && <span>Relevance: {Math.round(evidence.relevanceScore * 100)}%</span>}
+                                  {evidence.credibilityScore && <span>Credibility: {Math.round(evidence.credibilityScore * 100)}%</span>}
                                 </div>
                                 {evidence.keyQuote && (
                                   <div style={{ fontSize: 12, color: "#374151", marginTop: 6, fontStyle: "italic", paddingLeft: 8, borderLeft: "2px solid #d1d5db" }}>

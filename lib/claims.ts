@@ -1,9 +1,9 @@
 import OpenAI from 'openai';
-import { Claim } from './types';
+import { Claim, ClaimType } from './types';
 
 type RawClaimExtraction = {
   text: string;
-  type: 'factual' | 'opinion' | 'prediction' | 'mixed';
+  type: ClaimType;
   importance: number;
 };
 
@@ -64,7 +64,7 @@ export async function extractStructuredClaims(
             'Extract 3-6 checkable claims from the text.',
             'For each claim, provide:',
             '- text: the claim statement',
-            '- type: "factual", "opinion", "prediction", or "mixed"',
+            '- type: "QUOTE" (someone said X), "EVENT" (X happened), "SCHEDULE" (X will happen), "POLICY" (rule/law/decision), or "OTHER"',
             '- importance: 0-1 (how central to the main argument)',
             '',
             'Return JSON: { claims: Array<{ text: string, type: string, importance: number }> }',
@@ -85,9 +85,9 @@ export async function extractStructuredClaims(
     
     return rawClaims.map(raw => ({
       text: raw.text || '',
-      type: ['factual', 'opinion', 'prediction', 'mixed'].includes(raw.type)
-        ? (raw.type as Claim['type'])
-        : 'mixed',
+      type: ['QUOTE', 'EVENT', 'SCHEDULE', 'POLICY', 'OTHER'].includes(raw.type)
+        ? (raw.type as ClaimType)
+        : 'OTHER',
       importance: typeof raw.importance === 'number' ? raw.importance : 0.5,
       checkability: assessCheckability(raw.text || ''),
       evidence: [],

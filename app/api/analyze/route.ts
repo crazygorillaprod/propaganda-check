@@ -201,9 +201,9 @@ export async function POST(req: Request) {
       claim.evidence = await analyzeSourceStance(claim.text, claim.evidence, openai);
       
       // Calculate evidence summary
-      const uniqueDomains = new Set(claim.evidence.map(e => e.domain)).size;
+      const uniqueDomains = new Set(claim.evidence.map(e => e.domain || e.publisher)).size;
       const avgCredibility = claim.evidence.length > 0
-        ? claim.evidence.reduce((sum, e) => sum + e.credibilityScore, 0) / claim.evidence.length
+        ? claim.evidence.reduce((sum, e) => sum + (e.credibilityScore || 0), 0) / claim.evidence.length
         : 0;
       
       claim.evidenceSummary = {
@@ -294,8 +294,10 @@ export async function POST(req: Request) {
     }
 
     // 8) Build response with new structure
+    const overall_score = calculateOverallVerifiability(claims);
+    
     const response: AnalysisResult = {
-      articleMeta,
+      article_meta: articleMeta,
       claims: claims.map(c => ({
         text: c.text,
         type: c.type,
@@ -304,7 +306,12 @@ export async function POST(req: Request) {
         evidence: c.evidence.map(e => ({
           url: e.url,
           title: e.title,
+          publisher: e.publisher,
+          published_at: e.published_at,
           snippet: e.snippet,
+          supports_claim: e.supports_claim,
+          confidence: e.confidence,
+          // Legacy fields
           domain: e.domain,
           age: e.age,
           relevanceScore: e.relevanceScore,
@@ -318,7 +325,8 @@ export async function POST(req: Request) {
         evidenceSummary: c.evidenceSummary,
         suggestedSearches: c.suggestedSearches,
       })),
-      overallVerifiability,
+      overall_score,
+      overallVerifiability: overall_score, // Legacy field for backward compatibility
       tactics: analysisResult?.tactics ?? { score_0_to_100: 0, flags: [], explanation: "" },
       rebuttal: analysisResult?.rebuttal ?? { short: "" },
       debug: {

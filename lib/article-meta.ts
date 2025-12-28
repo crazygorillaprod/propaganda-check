@@ -79,6 +79,9 @@ export async function fetchArticleMeta(
     const domain = urlObj.hostname.replace(/^www\./, '');
     
     const meta: ArticleMeta = {
+      canonical_url: url,
+      publisher: domain,
+      // Legacy fields for backward compatibility
       url,
       domain,
       sourceType: classifySourceType(domain),
@@ -88,12 +91,19 @@ export async function fetchArticleMeta(
       meta.title = braveResult.title?.trim();
       meta.snippet = braveResult.description?.trim();
       if (braveResult.age) {
-        meta.publishDate = parsePublishDate(braveResult.age);
+        const parsedDate = parsePublishDate(braveResult.age);
+        meta.published_at = parsedDate;
+        meta.publishDate = parsedDate; // legacy
       }
     }
     
     return meta;
   } catch {
-    return { url, sourceType: 'unknown' };
+    return { 
+      canonical_url: url,
+      publisher: 'unknown',
+      sourceType: 'unknown',
+      url, // legacy
+    };
   }
 }
