@@ -119,7 +119,10 @@ export async function POST(req: Request) {
     let page = null as null | { url: string; title: string; text: string; links: string[] };
     try {
       const asUrl = new URL(input);
-      const r = await fetch(asUrl.toString(), { headers: { "User-Agent": "propaganda-check/1.0 (+https://example)" }, timeout: 10000 });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const r = await fetch(asUrl.toString(), { headers: { "User-Agent": "propaganda-check/1.0 (+https://example)" }, signal: controller.signal });
+      clearTimeout(timeoutId);
       const html = await r.text();
       page = {
         url: asUrl.toString(),
@@ -162,7 +165,7 @@ export async function POST(req: Request) {
     const systemPrompt = `You are an assistant that analyzes text for propaganda, manipulation, and verifiability. Respond with valid JSON only. The JSON object must contain: \n- tactics: { score_0_to_100: number (0-100, higher means more verifiable / less manipulative), flags: string[], explanation: string }\n- rebuttal: { short: string }\n- verifiability_score: number (0-100 where 100 is fully verifiable)\n- sources: array of { url?: string, title?: string, snippet?: string } (include citations or page links if present)\n- research_needed: boolean (true if verifiability_score < 90)\nOnly output JSON. Do NOT include any keys that contain secrets or API keys. Use the provided page content when available to identify claims and supporting references. If you find explicit references (names, datasets, numbers), include them in explanation and add probable source URLs or the page's links. Keep values concise.`;
 
     const resp = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: contentForModel },
@@ -208,7 +211,10 @@ export async function POST(req: Request) {
     // If sources are sparse, try to fetch brief snippets for brave results
     async function fetchSnippet(url: string) {
       try {
-        const r = await fetch(url, { headers: { "User-Agent": "propaganda-check/1.0 (+https://example)" }, timeout: 8000 });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const r = await fetch(url, { headers: { "User-Agent": "propaganda-check/1.0 (+https://example)" }, signal: controller.signal });
+        clearTimeout(timeoutId);
         if (!r.ok) return undefined;
         const html = await r.text();
         const text = stripTags(html).slice(0, 800);
@@ -227,7 +233,7 @@ export async function POST(req: Request) {
     if ((!filtered || filtered.length === 0) && externalSources && externalSources.length > 0) {
       for (let i = 0; i < Math.min(3, externalSources.length); i++) {
         const s = externalSources[i];
-        if (s && !s.snippet && s.url && !isNoisyUrl(s.url)) {
+        if (s && !s.snippet && s.url && !isJunkUrl(s.url)) {
           const sn = await fetchSnippet(s.url);
           const idx = filtered.findIndex((x) => x.url === s.url);
           if (idx >= 0 && sn) filtered[idx].snippet = sn;
@@ -260,7 +266,7 @@ export async function POST(req: Request) {
           const prompt = `Classify whether the following source (title/snippet) would SUPPORT, REFUTE, or be NEUTRAL regarding the CLAIM.\n\nCLAIM: ${input}\n\nSOURCE TITLE: ${s.title || ''}\nSOURCE SNIPPET: ${s.snippet || ''}\n\nReturn JSON only: { "stance": "supports|refutes|neutral", "confidence": number }
 `;
           const r = await new OpenAI({ apiKey: process.env.OPENAI_API_KEY }).chat.completions.create({
-            model: 'gpt-4.1-mini',
+            model: 'gpt-4o-mini',
             messages: [{ role: 'system', content: 'You are a concise classifier.' }, { role: 'user', content: prompt }],
             response_format: { type: 'json_object' },
           });
@@ -315,7 +321,7 @@ export async function POST(req: Request) {
         try {
           const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
           // The SDK supports a moderation endpoint; use 'omni-moderation-latest' if available
-          const mod = await (client as any).moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 2000) });
+          const mod = await (client as any).moderations.create({ model: 'text-moderation-latest', input: text.slice(0, 2000) });
           const res = mod?.results?.[0];
           if (res) {
             // If any category flagged as true, treat as sensitive
