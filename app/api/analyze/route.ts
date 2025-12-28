@@ -32,6 +32,45 @@ function extractLinks(html: string, baseUrl?: string) {
   return Array.from(new Set(links)).slice(0, 10); // limit
 }
 
+// Brave Search helper
+async function braveSearch(query: string, size = 5) {
+  const key = process.env.BRAVE_SEARCH_API_KEY;
+  if (!key || !query) return [];
+
+  const base = process.env.BRAVE_SEARCH_API_URL ?? "https://api.search.brave.com/res/v1";
+  const url = new URL(base);
+  url.searchParams.set("q", query);
+  url.searchParams.set("size", String(size));
+
+  // Try with Authorization header; if the service expects x-api-key adaptively handle failures
+  const headers = { Accept: "application/json", Authorization: `Bearer ${key}` };
+
+  try {
+    let r = await fetch(url.toString(), { headers });
+    if (r.status === 401 || r.status === 403) {
+      // try x-api-key header as fallback
+      r = await fetch(url.toString(), { headers: { Accept: "application/json", "x-api-key": key } });
+    }
+    if (!r.ok) return [];
+
+    const js = await r.json();
+
+    // Heuristic mapping for common keys
+    const items = js.items || js.results || js.data || [];
+    const out = (items || []).slice(0, size).map((it: any) => {
+      return {
+        title: it.title || it.name || it.heading || undefined,
+        url: it.url || it.link || it.l || it.href || it.canonicalUrl || undefined,
+        snippet: it.snippet || it.description || it.snippetText || undefined,
+      };
+    }).filter((s: any) => s.url);
+
+    return out;
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { input } = await req.json();
@@ -107,6 +146,32 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: "Invalid model response", details: e?.message ?? String(e) }), { status: 502, headers: { "Content-Type": "application/json", "X-Robots-Tag": "noindex, nofollow" } });
     }
 
+    // Augment sources with Brave Search results when possible
+    let externalSources: Array<{ url?: string; title?: string; snippet?: string }> = [];
+    try {
+      const primaryQuery = page ? (page.title || page.text.slice(0, 200)) : input.slice(0, 200);
+      const results = await braveSearch(primaryQuery, 5);
+      externalSources = results.map((r: any) => ({ url: r.url, title: r.title, snippet: r.snippet }));
+    } catch (e) {
+      externalSources = [];
+    }
+
+    // Merge model-provided sources, page links, and external sources; dedupe by URL
+    const modelSources = Array.isArray(data.sources) ? data.sources : [];
+    const pageSources = page ? page.links.map((u) => ({ url: u })) : [];
+
+    const all = [...modelSources, ...pageSources, ...externalSources];
+    const seen = new Set<string>();
+    const merged: Array<{ url?: string; title?: string; snippet?: string }> = [];
+    for (const s of all) {
+      if (!s?.url) continue;
+      const u = String(s.url);
+      if (seen.has(u)) continue;
+      seen.add(u);
+      merged.push({ url: u, title: s.title, snippet: s.snippet });
+      if (merged.length >= 10) break;
+    }
+
     // Normalize response
     const out = {
       tactics: {
@@ -116,7 +181,7 @@ export async function POST(req: Request) {
       },
       rebuttal: { short: data.rebuttal?.short ?? "" },
       verifiability_score: typeof data.verifiability_score === "number" ? data.verifiability_score : 0,
-      sources: Array.isArray(data.sources) ? data.sources : (page ? page.links.slice(0, 5).map((u) => ({ url: u })) : []),
+      sources: merged,
       research_needed: typeof data.research_needed === "boolean" ? data.research_needed : ( (typeof data.verifiability_score === 'number') ? data.verifiability_score < 90 : true ),
     };
 
