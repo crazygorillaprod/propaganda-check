@@ -95,15 +95,17 @@ async function braveSearch(query: string, size = 5) {
 
     // Heuristic mapping for common keys
     const items = js.items || js.results || js.data || [];
-    const out = (items || []).slice(0, size).map((it: any) => {
+    const mapped = (items || []).slice(0, size).map((it: any) => {
       return {
         title: it.title || it.name || it.heading || undefined,
         url: it.url || it.link || it.l || it.href || it.canonicalUrl || undefined,
         snippet: it.snippet || it.description || it.snippetText || undefined,
       };
-    }).filter((s: any) => s.url);
+    });
 
-    return out;
+    return mapped
+      .filter((r: any) => r.title && r.url && !isBadCitation(r.url))
+      .slice(0, 6);
   } catch (e) {
     return [];
   }
