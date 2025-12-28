@@ -47,7 +47,7 @@ function isBadCitation(urlStr: string) {
     // AP hub/category pages
     if (host.endsWith("apnews.com") && path.startsWith("/hub/")) return true;
 
-    // very shallow category pages like /politics or /world
+    // shallow category pages like /politics or /world
     const segments = path.split("/").filter(Boolean);
     if (segments.length <= 1) return true;
 
