@@ -32,19 +32,24 @@ function extractLinks(html: string, baseUrl?: string) {
   return Array.from(new Set(links)).slice(0, 10); // limit
 }
 
-function isJunkUrl(u: string) {
+function isBadCitation(urlStr: string) {
   try {
-    const url = new URL(u);
-    const path = url.pathname.toLowerCase();
+    const u = new URL(urlStr);
+    const host = u.hostname.replace(/^www\./, "");
+    const path = u.pathname.toLowerCase();
 
-    // junk paths
+    // junk / nav pages
+    if (path === "/" || path.length < 2) return true;
     if (path.includes("/terms")) return true;
     if (path.includes("/privacy")) return true;
     if (path.includes("/about")) return true;
-    if (path === "/" || path.length < 2) return true;
 
-    // category/tag pages often useless
-    if (path.split("/").length <= 2) return true; // e.g. /politics
+    // AP hub/category pages
+    if (host.endsWith("apnews.com") && path.startsWith("/hub/")) return true;
+
+    // very shallow category pages like /politics or /world
+    const segments = path.split("/").filter(Boolean);
+    if (segments.length <= 1) return true;
 
     return false;
   } catch {
@@ -227,13 +232,13 @@ export async function POST(req: Request) {
     }
 
     // Filter noisy links from merged set (drop site roots, /privacy, /terms, etc.)
-    const filtered = merged.filter((s) => s && s.url && !isJunkUrl(s.url)).slice(0, 10);
+    const filtered = merged.filter((s) => s && s.url && !isBadCitation(s.url)).slice(0, 10);
 
     // If there are no model/page sources, enrich brave sources with fetched snippets (but operate on filtered list)
     if ((!filtered || filtered.length === 0) && externalSources && externalSources.length > 0) {
       for (let i = 0; i < Math.min(3, externalSources.length); i++) {
         const s = externalSources[i];
-        if (s && !s.snippet && s.url && !isJunkUrl(s.url)) {
+        if (s && !s.snippet && s.url && !isBadCitation(s.url)) {
           const sn = await fetchSnippet(s.url);
           const idx = filtered.findIndex((x) => x.url === s.url);
           if (idx >= 0 && sn) filtered[idx].snippet = sn;
