@@ -92,40 +92,37 @@ function countUniqueDomains(sources: Source[]) {
 
 async function braveSearch(query: string, excludeDomains: string[] = []) {
   const key = process.env.BRAVE_SEARCH_API_KEY;
-  if (!key) return [] as Source[];
+  if (!key) return { usedQuery: query, results: [] as Source[] };
 
   const excludes = excludeDomains
     .filter(Boolean)
     .map((d) => ` -site:${d}`)
     .join("");
 
-  const q = `${query}${excludes}`;
+  const usedQuery = `${query}${excludes}`;
 
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
-  url.searchParams.set("q", q);
+  url.searchParams.set("q", usedQuery);
   url.searchParams.set("count", "8");
   url.searchParams.set("safesearch", "moderate");
 
   const res = await fetch(url.toString(), {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": key,
-    },
+    headers: { Accept: "application/json", "X-Subscription-Token": key },
   });
 
   const text = await res.text();
 
   if (!res.ok) {
     console.error("Brave error:", res.status, text);
-    return [];
+    return { usedQuery, results: [] as Source[] };
   }
 
   let data: BraveWeb | null = null;
   try {
     data = JSON.parse(text) as BraveWeb;
-  } catch (e) {
+  } catch {
     console.error("Brave JSON parse error:", text.slice(0, 200));
-    return [];
+    return { usedQuery, results: [] as Source[] };
   }
 
   const results = data?.web?.results ?? [];
@@ -138,7 +135,7 @@ async function braveSearch(query: string, excludeDomains: string[] = []) {
     }))
     .filter((r) => r.title && r.url && !isBadCitation(r.url));
 
-  return mapped.slice(0, 8);
+  return { usedQuery, results: mapped.slice(0, 8) };
 }
 
 export async function POST(req: Request) {
@@ -161,7 +158,7 @@ export async function POST(req: Request) {
     // If user pasted a URL, we do a first search on it to get a title/snippet context.
     let urlContext = "";
     if (inputIsUrl) {
-      const firstHits = await braveSearch(input.trim(), []);
+      const { results: firstHits } = await braveSearch(input.trim(), []);
       const hit = firstHits.find((h) => getBaseDomain(h.url) === inputDomain) || firstHits[0];
       if (hit) {
         urlContext = `URL: ${input.trim()}\nTitle: ${hit.title}\nSnippet: ${hit.snippet}`;
@@ -194,7 +191,7 @@ export async function POST(req: Request) {
     // 2) Retrieve evidence for each claim, excluding the original domain if input was a URL
     const bundles = await Promise.all(
       claims.map(async (claim) => {
-        const sources = await braveSearch(claim, inputDomain ? [inputDomain] : []);
+        const { results: sources } = await braveSearch(claim, inputDomain ? [inputDomain] : []);
         // Keep max 6 raw; later we dedupe for citations
         return { claim, sources: sources.slice(0, 6) };
       })
