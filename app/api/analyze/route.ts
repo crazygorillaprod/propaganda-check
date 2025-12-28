@@ -263,7 +263,7 @@ export async function POST(req: Request) {
       // Try model-based classification if we have an API key
       if (process.env.OPENAI_API_KEY && !process.env.MOCK_ANALYZE) {
         try {
-          const prompt = `Classify whether the following source (title/snippet) would SUPPORT, REFUTE, or be NEUTRAL regarding the CLAIM.\n\nCLAIM: ${input}\n\nSOURCE TITLE: ${s.title || ''}\nSOURCE SNIPPET: ${s.snippet || ''}\n\nReturn JSON only: { "stance": "supports|refutes|neutral", "confidence": number }
+          const prompt = `Classify whether the following source (title/snippet) would SUPPORT, REFUTE, or be NEUTRAL regarding the CLAIM.\n\nCLAIM: ${input}\n\nSOURCE TITLE: ${s.title || ''}\nSOURCE SNIPPET: ${s.snippet || ''}\n\nReturn JSON only: { "stance": "supports|refutes|neutral", "confidence": number between 0-100 }
 `;
           const r = await new OpenAI({ apiKey: process.env.OPENAI_API_KEY }).chat.completions.create({
             model: 'gpt-4o-mini',
@@ -274,6 +274,8 @@ export async function POST(req: Request) {
           const parsed = typeof rawc === 'string' ? JSON.parse(rawc) : rawc;
           stance = parsed.stance || 'unknown';
           confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+          // Normalize confidence: if value is between 0-1, convert to 0-100
+          if (confidence > 0 && confidence < 1) confidence = Math.round(confidence * 100);
         } catch (e) {
           const h = heuristicClassify(input, s.snippet || s.title || '');
           stance = h.stance; confidence = h.confidence;
