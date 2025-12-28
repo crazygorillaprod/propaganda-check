@@ -90,17 +90,24 @@ export default function Home() {
           {result.sources && result.sources.length ? (
             <ul>
               {result.sources.map((s: any, i: number) => (
-                <li key={i}>
+                <li key={i} style={{ marginBottom: 8 }}>
                   {s.url ? (
-                    <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
+                    <div>
+                      <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
+                      <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
+                      {s.snippet && <div style={{ marginTop: 6, color: '#444' }}>{s.snippet}</div>}
+                    </div>
                   ) : (
-                    <span>{s.title || s.snippet || 'Unnamed source'}</span>
+                    <div>
+                      <span>{s.title || s.snippet || 'Unnamed source'}</span>
+                      <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
+                    </div>
                   )}
                 </li>
               ))}
             </ul>
           ) : (
-            <p style={{ opacity: 0.8 }}>No explicit sources were found on the page. Consider searching official sources.</p>
+            <p style={{ opacity: 0.8 }}>No explicit sources were found on the page.</p>
           )}
 
           <h3 style={{ marginTop: 12 }}>Research guidance</h3>
@@ -111,6 +118,19 @@ export default function Home() {
               <b>Content appears highly verifiable (verifiability {result.verifiability_score}/100).</b>
             )}
           </p>
+
+          {result.suggested_searches && result.suggested_searches.length ? (
+            <div style={{ marginTop: 8 }}>
+              <b>Suggested searches:</b>
+              <ul>
+                {result.suggested_searches.map((q: string, i: number) => (
+                  <li key={i}>
+                    <a href={`https://search.brave.com/search?q=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer">{q}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <details style={{ marginTop: 12 }}>
             <summary>Show raw response</summary>

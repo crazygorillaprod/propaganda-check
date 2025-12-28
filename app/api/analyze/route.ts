@@ -147,30 +147,69 @@ export async function POST(req: Request) {
     }
 
     // Augment sources with Brave Search results when possible
-    let externalSources: Array<{ url?: string; title?: string; snippet?: string }> = [];
+    let externalSources: Array<{ url?: string; title?: string; snippet?: string; origin?: string }> = [];
     try {
       const primaryQuery = page ? (page.title || page.text.slice(0, 200)) : input.slice(0, 200);
       const results = await braveSearch(primaryQuery, 5);
-      externalSources = results.map((r: any) => ({ url: r.url, title: r.title, snippet: r.snippet }));
+      externalSources = results.map((r: any) => ({ url: r.url, title: r.title, snippet: r.snippet, origin: 'brave' }));
     } catch (e) {
       externalSources = [];
     }
 
     // Merge model-provided sources, page links, and external sources; dedupe by URL
-    const modelSources = Array.isArray(data.sources) ? data.sources : [];
-    const pageSources = page ? page.links.map((u) => ({ url: u })) : [];
+    const modelSources = Array.isArray(data.sources) ? data.sources.map((s: any) => ({ url: s.url, title: s.title, snippet: s.snippet, origin: 'model' })) : [];
+    const pageSources = page ? page.links.map((u) => ({ url: u, title: undefined, snippet: undefined, origin: 'page' })) : [];
 
     const all = [...modelSources, ...pageSources, ...externalSources];
     const seen = new Set<string>();
-    const merged: Array<{ url?: string; title?: string; snippet?: string }> = [];
+    const merged: Array<{ url?: string; title?: string; snippet?: string; origin?: string }> = [];
     for (const s of all) {
       if (!s?.url) continue;
       const u = String(s.url);
       if (seen.has(u)) continue;
       seen.add(u);
-      merged.push({ url: u, title: s.title, snippet: s.snippet });
+      merged.push({ url: u, title: s.title, snippet: s.snippet, origin: s.origin });
       if (merged.length >= 10) break;
     }
+
+    // If sources are sparse, try to fetch brief snippets for brave results
+    async function fetchSnippet(url: string) {
+      try {
+        const r = await fetch(url, { headers: { "User-Agent": "propaganda-check/1.0 (+https://example)" }, timeout: 8000 });
+        if (!r.ok) return undefined;
+        const html = await r.text();
+        const text = stripTags(html).slice(0, 800);
+        // return a short snippet (first sentence-ish)
+        const m = text.match(/(.{120,300}?\.|$)/);
+        return m ? m[0].trim() : text.slice(0, 200);
+      } catch (e) {
+        return undefined;
+      }
+    }
+
+    // If there are no model/page sources, enrich brave sources with fetched snippets
+    if ((!merged || merged.length === 0) && externalSources && externalSources.length > 0) {
+      // Fetch top 3 snippets (best-effort)
+      for (let i = 0; i < Math.min(3, externalSources.length); i++) {
+        const s = externalSources[i];
+        if (s && !s.snippet && s.url) {
+          // no await flood: do sequential limited fetches
+          const sn = await fetchSnippet(s.url);
+          // find in merged and attach if exists
+          const idx = merged.findIndex((x) => x.url === s.url);
+          if (idx >= 0 && sn) merged[idx].snippet = sn;
+        }
+      }
+    }
+
+    // Build suggested search queries to help research
+    const queryBase = page ? (page.title || page.text.slice(0, 200)) : input.slice(0, 200);
+    const suggested_searches = [
+      `${queryBase}`,
+      `${queryBase} fact check`,
+      `site:.gov ${queryBase}`,
+      `${queryBase} data`,
+    ].slice(0, 4);
 
     // Normalize response
     const out = {
@@ -182,6 +221,7 @@ export async function POST(req: Request) {
       rebuttal: { short: data.rebuttal?.short ?? "" },
       verifiability_score: typeof data.verifiability_score === "number" ? data.verifiability_score : 0,
       sources: merged,
+      suggested_searches,
       research_needed: typeof data.research_needed === "boolean" ? data.research_needed : ( (typeof data.verifiability_score === 'number') ? data.verifiability_score < 90 : true ),
     };
 
