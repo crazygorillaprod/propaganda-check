@@ -73,76 +73,91 @@ export default function Home() {
       {error && <p style={{ color: "crimson", marginTop: 12 }}>{error}</p>}
 
       {result && (
-        <section style={{ marginTop: 24 }}>
-          <h2>Manipulation Signals</h2>
-          <p>
-            <b>Score:</b> {result.tactics?.score_0_to_100}/100
-          </p>
-          <p>
-            <b>Flags:</b> {result.tactics?.flags?.join(", ") || 'None'}
-          </p>
-          <p>{result.tactics?.explanation}</p>
-
-          <h2 style={{ marginTop: 18 }}>Calm Rebuttal</h2>
-          <p>{result.rebuttal?.short}</p>
-
-          <h2 style={{ marginTop: 18 }}>Sources</h2>
-          {result.sources && result.sources.length ? (
-            <ul>
-              {result.sources.map((s: any, i: number) => (
-                <li key={i} style={{ marginBottom: 8 }}>
-                  {s.url ? (
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <a href={s.url} target="_blank" rel="noopener noreferrer">{s.title || s.url}</a>
-                        <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
-                        <span style={{ marginLeft: 8 }}>
-                          {s.stance === 'supports' ? <small style={{ background: '#d1fae5', color: '#065f46', padding: '2px 6px', borderRadius: 6 }}>SUPPORTS</small> : s.stance === 'refutes' ? <small style={{ background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 6 }}>REFUTES</small> : s.stance === 'neutral' ? <small style={{ background: '#f3f4f6', color: '#374151', padding: '2px 6px', borderRadius: 6 }}>NEUTRAL</small> : <small style={{ background: '#fff7ed', color: '#92400e', padding: '2px 6px', borderRadius: 6 }}>UNKNOWN</small>}
-                        </span>
-                        {s.confidence ? <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>({s.confidence}%)</span> : null}
-                      </div>
-                      {s.snippet && <div style={{ marginTop: 6, color: '#444' }}>{s.snippet}</div>}
-                    </div>
-                  ) : (
-                    <div>
-                      <span>{s.title || s.snippet || 'Unnamed source'}</span>
-                      <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 12 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p style={{ opacity: 0.8 }}>No explicit sources were found on the page.</p>
-          )}
-
-          <h3 style={{ marginTop: 12 }}>Research guidance</h3>
-          <p>
-            {result.research_needed ? (
-              <b>This content should be researched further (verifiability {result.verifiability_score}/100).</b>
-            ) : (
-              <b>Content appears highly verifiable (verifiability {result.verifiability_score}/100).</b>
-            )}
-          </p>
-
-          {result.suggested_searches && result.suggested_searches.length ? (
-            <div style={{ marginTop: 8 }}>
-              <b>Suggested searches:</b>
-              <ul>
-                {result.suggested_searches.map((q: string, i: number) => (
-                  <li key={i}>
-                    <a href={`https://search.brave.com/search?q=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer">{q}</a>
-                  </li>
-                ))}
-              </ul>
+        <section style={{ marginTop: 32, background: '#f9fafb', padding: 24, borderRadius: 8, border: '1px solid #e5e7eb' }}>
+          <div style={{ background: 'white', padding: 20, borderRadius: 6, marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12, color: '#111' }}>Manipulation Signals</h2>
+            <div style={{ display: 'flex', gap: 24, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 4 }}>Score</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#059669' }}>{result.tactics?.score_0_to_100}/100</div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, color: '#6b7280', marginBottom: 4 }}>Flags</div>
+                <div style={{ fontSize: 16 }}>{result.tactics?.flags?.length ? result.tactics.flags.map((f: string) => (
+                  <span key={f} style={{ display: 'inline-block', background: '#fef3c7', color: '#92400e', padding: '4px 10px', borderRadius: 4, marginRight: 6, fontSize: 13 }}>{f}</span>
+                )) : <span style={{ color: '#9ca3af' }}>None</span>}</div>
+              </div>
             </div>
-          ) : null}
+            <div style={{ fontSize: 15, lineHeight: 1.6, color: '#374151' }}>{result.tactics?.explanation}</div>
+          </div>
 
-          <div style={{ marginTop: 12 }}>
-            <small style={{ color: '#666' }}>Raw model output is hidden by default. If you need to debug, enable developer mode (DEV_ALLOW_RAW) in the server environment.</small>
-            {result.redactions && result.redactions.length ? (
-              <p style={{ marginTop: 8, color: '#92400e' }}><b>Note:</b> Some content was redacted for safety and is not shown.</p>
+          <div style={{ background: 'white', padding: 20, borderRadius: 6, marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12, color: '#111' }}>Calm Rebuttal</h2>
+            <p style={{ fontSize: 15, lineHeight: 1.6, color: '#374151', margin: 0 }}>{result.rebuttal?.short}</p>
+          </div>
+
+          <div style={{ background: 'white', padding: 20, borderRadius: 6, marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, color: '#111' }}>Sources</h2>
+            {result.sources && result.sources.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {result.sources.map((s: any, i: number) => (
+                  <div key={i} style={{ paddingBottom: 16, borderBottom: i < result.sources.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                    {s.url ? (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                          <a href={s.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 15, fontWeight: 600, color: '#2563eb' }}>{s.title || s.url}</a>
+                          <span style={{ fontSize: 11, opacity: 0.6, textTransform: 'uppercase', letterSpacing: 0.5 }}>[{s.origin||'unknown'}]</span>
+                          <span>
+                            {s.stance === 'supports' ? <small style={{ background: '#d1fae5', color: '#065f46', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>SUPPORTS</small> : s.stance === 'refutes' ? <small style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>REFUTES</small> : s.stance === 'neutral' ? <small style={{ background: '#f3f4f6', color: '#374151', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>NEUTRAL</small> : <small style={{ background: '#fff7ed', color: '#92400e', padding: '4px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>UNKNOWN</small>}
+                          </span>
+                          {s.confidence ? <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>({s.confidence}%)</span> : null}
+                        </div>
+                        {s.snippet && <div style={{ fontSize: 14, color: '#6b7280', lineHeight: 1.5, paddingLeft: 0 }}>{s.snippet}</div>}
+                      </div>
+                    ) : (
+                      <div>
+                        <span style={{ fontSize: 15 }}>{s.title || s.snippet || 'Unnamed source'}</span>
+                        <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.6 }}>[{(s.origin||'unknown').toUpperCase()}]</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: '#9ca3af', margin: 0 }}>No explicit sources were found.</p>
+            )}
+          </div>
+
+          <div style={{ background: 'white', padding: 20, borderRadius: 6 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 12, color: '#111' }}>Research Guidance</h3>
+            <p style={{ fontSize: 15, marginBottom: 16, color: '#374151' }}>
+              {result.research_needed ? (
+                <span><strong style={{ color: '#dc2626' }}>⚠ Research recommended</strong> — verifiability score: {result.verifiability_score}/100</span>
+              ) : (
+                <span><strong style={{ color: '#059669' }}>✓ Highly verifiable</strong> — verifiability score: {result.verifiability_score}/100</span>
+              )}
+            </p>
+
+            {result.suggested_searches && result.suggested_searches.length ? (
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: '#6b7280' }}>Suggested searches:</div>
+                <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {result.suggested_searches.map((q: string, i: number) => (
+                    <li key={i} style={{ fontSize: 14 }}>
+                      <a href={`https://search.brave.com/search?q=${encodeURIComponent(q)}`} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb' }}>{q}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
+          </div>
+
+          <div style={{ marginTop: 16, padding: 12, fontSize: 13, color: '#6b7280', background: '#fef3c7', borderRadius: 4 }}>
+            {result.redactions && result.redactions.length ? (
+              <p style={{ margin: 0 }}><strong>Note:</strong> Some content was redacted for safety.</p>
+            ) : (
+              <p style={{ margin: 0 }}>Analysis complete. All content displayed.</p>
+            )}
           </div>
         </section>
       )}
