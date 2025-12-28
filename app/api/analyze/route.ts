@@ -286,7 +286,7 @@ export async function POST(req: Request) {
     }
 
     // Normalize response
-    const out = {
+    const out: any = {
       tactics: {
         score_0_to_100: typeof data.tactics?.score_0_to_100 === "number" ? data.tactics.score_0_to_100 : (100 - (data.verifiability_score ?? 0)),
         flags: Array.isArray(data.tactics?.flags) ? data.tactics.flags : (Array.isArray(data.flags) ? data.flags : []),
@@ -298,6 +298,78 @@ export async function POST(req: Request) {
       suggested_searches,
       research_needed: typeof data.research_needed === "boolean" ? data.research_needed : ( (typeof data.verifiability_score === 'number') ? data.verifiability_score < 90 : true ),
     };
+
+    // --- Redaction: remove or rewrite any sensitive content before returning ---
+    const redactions: Array<{ field: string; reason: string }> = [];
+
+    async function checkSensitiveText(text: string) {
+      if (!text) return { sensitive: false, reasons: [] };
+      // Short-circuit if mocking
+      if (process.env.MOCK_ANALYZE === '1') return { sensitive: false, reasons: [] };
+
+      // Try OpenAI moderation if available
+      if (process.env.OPENAI_API_KEY) {
+        try {
+          const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+          // The SDK supports a moderation endpoint; use 'omni-moderation-latest' if available
+          const mod = await (client as any).moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 2000) });
+          const res = mod?.results?.[0];
+          if (res) {
+            // If any category flagged as true, treat as sensitive
+            const categories = Object.keys(res.categories || {}).filter((k) => (res.categories as any)[k]);
+            if (categories.length) return { sensitive: true, reasons: categories };
+          }
+        } catch (e) {
+          // swallow and fall back to heuristics
+        }
+      }
+
+      // Heuristic checks (violent language, doxxing patterns)
+      const reasons: string[] = [];
+      const t = text.toLowerCase();
+      if (/\b(kill|murder|assassinat|bomb|explode|poison|terrorist|rape|lynch)\b/.test(t)) reasons.push('violence');
+      if (/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(text)) reasons.push('personal_data');
+      if (/\b\d{3}-\d{2}-\d{4}\b/.test(text)) reasons.push('personal_data');
+      if (/\b\d{7,}\b/.test(text)) reasons.push('phone_or_id');
+
+      return { sensitive: reasons.length > 0, reasons };
+    }
+
+    // Check and redact fields
+    // tactics.explanation
+    const check1 = await checkSensitiveText(out.tactics.explanation);
+    if (check1.sensitive) {
+      redactions.push({ field: 'tactics.explanation', reason: check1.reasons.join(',') });
+      out.tactics.explanation = '[REDACTED: content removed for safety]';
+    }
+
+    // rebuttal.short
+    const check2 = await checkSensitiveText(out.rebuttal.short);
+    if (check2.sensitive) {
+      redactions.push({ field: 'rebuttal.short', reason: check2.reasons.join(',') });
+      out.rebuttal.short = '[REDACTED: content removed for safety]';
+    }
+
+    // sources snippets/titles
+    for (let i = 0; i < out.sources.length; i++) {
+      const s = out.sources[i];
+      if (s?.snippet) {
+        const cs = await checkSensitiveText(s.snippet);
+        if (cs.sensitive) {
+          redactions.push({ field: `sources[${i}].snippet`, reason: cs.reasons.join(',') });
+          s.snippet = '[REDACTED: content removed for safety]';
+        }
+      }
+      if (s?.title) {
+        const ct = await checkSensitiveText(s.title);
+        if (ct.sensitive) {
+          redactions.push({ field: `sources[${i}].title`, reason: ct.reasons.join(',') });
+          s.title = '[REDACTED: content removed for safety]';
+        }
+      }
+    }
+
+    if (redactions.length) out.redactions = redactions;
 
     return new Response(JSON.stringify(out), { status: 200, headers: { "Content-Type": "application/json", "X-Robots-Tag": "noindex, nofollow" } });
   } catch (err: any) {

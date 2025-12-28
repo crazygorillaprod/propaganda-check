@@ -140,6 +140,9 @@ export default function Home() {
 
           <div style={{ marginTop: 12 }}>
             <small style={{ color: '#666' }}>Raw model output is hidden by default. If you need to debug, enable developer mode (DEV_ALLOW_RAW) in the server environment.</small>
+            {result.redactions && result.redactions.length ? (
+              <p style={{ marginTop: 8, color: '#92400e' }}><b>Note:</b> Some content was redacted for safety and is not shown.</p>
+            ) : null}
           </div>
         </section>
       )}
