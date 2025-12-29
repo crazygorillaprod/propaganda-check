@@ -1,7 +1,7 @@
 import AnalyzeClient from './AnalyzeClient'
 
 export const metadata = {
-  title: 'Analyze — propaganda-check',
+  title: 'Analyze — Propaganda Buster by BFMbreakdown',
 }
 
 export default function Page() {

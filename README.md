@@ -1,6 +1,6 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Propaganda Fact-Checking System
+## Propaganda Buster by BFMbreakdown
 
 This application analyzes news articles and claims for verifiability and manipulation tactics using AI-powered fact-checking.
 
@@ -33,7 +33,7 @@ This application analyzes news articles and claims for verifiability and manipul
 
 ### Environment Variables
 
-Create a `.env.local` file in the root directory with:
+Create a `.env.local` file in the root directory (you can start from `.env.local.example`) with:
 
 ```bash
 # Required: OpenAI API key for AI analysis
@@ -42,11 +42,55 @@ OPENAI_API_KEY=your_openai_api_key_here
 # Required: Brave Search API key for evidence retrieval
 # Without this, verifiability status will be NOT_RUN
 BRAVE_SEARCH_API_KEY=your_brave_search_api_key_here
+
+# Optional: Stripe billing (subscriptions)
+# Required if you want /pricing upgrade buttons and Stripe Checkout to work.
+STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Stripe Price IDs (one per paid tier)
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_CREATOR=price_...
+STRIPE_PRICE_ORGANIZATION=price_...
+
+# Admin back office (password-protected)
+# Enables /admin and /api/admin/*
+ADMIN_PASSWORD=choose_a_strong_password
 ```
 
 **Getting API Keys:**
 - **Brave Search**: Visit https://brave.com/search/api/ to sign up
 - **OpenAI**: Visit https://platform.openai.com/ to get API key
+
+### Stripe (Billing) Setup
+
+This app uses Stripe Checkout + webhooks:
+
+- Checkout session endpoint: `/api/billing/create-checkout-session`
+- Webhook endpoint: `/api/billing/webhook`
+
+To test locally:
+
+1. Create Products + Prices in Stripe for `pro`, `creator`, and `organization`, then set `STRIPE_PRICE_*` in `.env.local`.
+2. Install Stripe CLI and forward webhooks:
+
+```bash
+stripe listen --forward-to http://localhost:3000/api/billing/webhook
+```
+
+3. Copy the printed webhook signing secret into `STRIPE_WEBHOOK_SECRET`.
+
+Notes:
+- Tier upgrades are applied when Stripe sends `checkout.session.completed`.
+- In this repo, user/tier state is stored in-memory (see `lib/user-store.ts`), so it resets when the server restarts.
+
+### Admin Back Office
+
+- Visit `/admin` and log in with `ADMIN_PASSWORD`.
+- The admin dashboard can:
+  - View metering + cache stats
+  - Manually set a user tier for testing
+  - Invalidate cache entries
 
 ### Run Development Server
 

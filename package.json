@@ -11,10 +11,13 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
     "next": "16.1.1",
     "openai": "^6.15.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "stripe": "^20.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

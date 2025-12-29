@@ -110,3 +110,98 @@ export type AnalysisResult = {
   };
   debug?: unknown;
 };
+
+export type TeachingTake = {
+  executive_summary: string;              // 4–6 bullets max
+  what_we_know: string[];                 // anchored to evidence
+  what_is_uncertain: string[];            // explicitly stated
+  how_this_gets_spun: string[];           // framing tactics, neutral tone
+  pro_democracy_take: string;             // civic + rights framing
+  rebuttal_script: {
+    short: string;                        // 15–25 sec
+    medium: string;                       // 60 sec
+    long: string;                         // 2–3 min
+  };
+  talk_tracks: string[];                  // "If they say X, say Y"
+  questions_to_ask: string[];             // "What's your source?" etc
+  what_to_share_instead: string[];        // safer replacements
+  action_plan: {
+    today: string[];
+    this_week: string[];
+    ongoing: string[];
+  };
+  citations: { claim_id: string; evidence_ids: string[] }[];  // important
+};
+
+// Usage Metering Types
+export type UsageTier = 'free' | 'pro' | 'creator' | 'organization';
+
+export type UsagePeriod = {
+  user_id: string;
+  tier: UsageTier;
+  period_start: Date;
+  period_end: Date;
+  
+  // Fact checks (metered)
+  fact_checks_used: number;
+  fact_checks_limit: number;
+  fact_checks_rollover: number;
+  
+  // Analysis runs (unmetered for paid tiers)
+  analysis_runs_used: number;
+  
+  // Cost tracking
+  estimated_cost: number;
+  
+  // Metadata
+  created_at: Date;
+  updated_at: Date;
+};
+
+export type UsageEvent = {
+  id: string;
+  user_id: string;
+  event_type: 'fact_check' | 'analysis_run';
+  
+  // What was analyzed
+  input_type: 'url' | 'text' | 'claim' | 'video' | 'thread';
+  input_hash: string;  // For cache detection
+  
+  // Cost attribution
+  cost_estimate: number;
+  apis_called: string[];  // ['brave-search', 'youtube', 'reddit']
+  
+  // Results
+  claims_extracted: number;
+  evidence_retrieved: number;
+  used_cache: boolean;
+  
+  // Timestamps
+  timestamp: Date;
+  processing_time_ms: number;
+};
+
+export type CachedAnalysis = {
+  input_hash: string;
+  input_type: 'url' | 'text' | 'claim';
+  input_content: string;
+  
+  // Cache metadata
+  created_at: Date;
+  expires_at: Date;
+  access_count: number;
+  last_accessed: Date;
+  
+  // Cached results
+  analysis_result: AnalysisResult;
+  
+  // Cost savings
+  original_cost: number;
+};
+
+export type QuotaCheckResult = {
+  allowed: boolean;
+  remaining: number;
+  total_available: number;
+  reason?: string;
+};

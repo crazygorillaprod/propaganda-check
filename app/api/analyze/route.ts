@@ -16,6 +16,19 @@ import {
 import { sanitizeUrl, stripHtml } from "@/lib/sanitize";
 import { applyStanceGuardrails } from "@/lib/stance-guardrails";
 import { buildInputEvidenceForClaim } from "@/lib/input-evidence";
+import { 
+  checkQuota, 
+  recordUsage, 
+  calculateAnalysisCost,
+  type UsageTier 
+} from "@/lib/metering";
+import { 
+  generateInputHash, 
+  lookupCache, 
+  cacheAnalysis 
+} from "@/lib/cache";
+import { getEffectiveTier } from "@/lib/user-store";
+
 
 export const runtime = "nodejs";
 
@@ -280,14 +293,80 @@ async function braveSearch(query: string, excludeDomains: string[] = []) {
 }
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  
   try {
-    const { input: rawInput } = await req.json();
+    const body = await req.json();
+    const { input: rawInput, userId, tier, email } = body;
 
     if (!rawInput || typeof rawInput !== "string" || rawInput.trim().length < 8) {
       return Response.json({ error: "Missing input" }, { status: 400 });
     }
 
     const input = isUrl(rawInput.trim()) ? sanitizeUrl(rawInput.trim()) : rawInput.trim();
+    
+    // Determine input type and tier
+    const inputType: 'url' | 'text' = isUrl(input) ? 'url' : 'text';
+
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const effectiveUserId = normalizedEmail || 'anonymous';
+
+    // IMPORTANT: do not trust client-provided tier.
+    // Only a verified email with a server-side tier can unlock paid usage.
+    const userTier: UsageTier = normalizedEmail ? getEffectiveTier(normalizedEmail) : 'free';
+    
+    // Generate cache hash
+    const inputHash = generateInputHash(inputType, input);
+    
+    // Check cache first (doesn't count against quota)
+    console.log(`[Metering] Checking cache for hash: ${inputHash.substring(0, 12)}...`);
+    const cached = await lookupCache(inputHash);
+    
+    if (cached) {
+      console.log(`[Metering] Cache hit! Returning cached result (saved $${cached.original_cost.toFixed(3)})`);
+      
+      // Record cache hit (minimal cost, doesn't count as fact check)
+      await recordUsage(effectiveUserId, userTier, 'analysis_run', {
+        inputType,
+        inputHash,
+        costEstimate: 0,
+        apisCalled: [],
+        claimsExtracted: cached.analysis_result.claims.length,
+        evidenceRetrieved: cached.analysis_result.claims.reduce((sum, c) => sum + c.evidence.length, 0),
+        usedCache: true,
+        processingTimeMs: Date.now() - startTime,
+      });
+      
+      return Response.json({
+        ...cached.analysis_result,
+        _meta: {
+          cached: true,
+          cost: 0,
+          cache_saved: cached.original_cost,
+          processing_time_ms: Date.now() - startTime,
+        }
+      });
+    }
+    
+    // Check quota before performing expensive analysis
+    console.log(`[Metering] Checking quota for user: ${effectiveUserId}, tier: ${userTier}`);
+    const quotaCheck = await checkQuota(effectiveUserId, userTier, 'fact_check');
+    
+    if (!quotaCheck.allowed) {
+      console.log(`[Metering] Quota exceeded: ${quotaCheck.reason}`);
+      return Response.json(
+        {
+          error: 'Quota exceeded',
+          message: quotaCheck.reason,
+          remaining: quotaCheck.remaining,
+          total_available: quotaCheck.total_available,
+          upgrade_required: true,
+        },
+        { status: 429 }
+      );
+    }
+    
+    console.log(`[Metering] Quota OK - ${quotaCheck.remaining} checks remaining`);
 
     if (!process.env.OPENAI_API_KEY) {
       return Response.json({ error: "OPENAI_API_KEY not set" }, { status: 500 });
@@ -310,7 +389,7 @@ export async function POST(req: Request) {
         console.log(`[HTML Fetch] Attempting to fetch: ${input}`);
         const htmlResponse = await fetch(input, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; PropagandaCheck/1.0)',
+            'User-Agent': 'Mozilla/5.0 (compatible; PropagandaBuster/1.0)',
           },
           signal: AbortSignal.timeout(10000), // 10 second timeout
         });
@@ -625,7 +704,41 @@ export async function POST(req: Request) {
       },
     };
 
-    return Response.json(response);
+    // Calculate cost and record usage
+    const processingTime = Date.now() - startTime;
+    const costEstimate = calculateAnalysisCost(response);
+    const totalEvidence = response.claims.reduce((sum, c) => sum + c.evidence.length, 0);
+    
+    console.log(`[Metering] Analysis complete - Cost: $${costEstimate.toFixed(3)}, Time: ${processingTime}ms`);
+    
+    // Record usage event
+    await recordUsage(effectiveUserId, userTier, 'fact_check', {
+      inputType,
+      inputHash,
+      costEstimate,
+      apisCalled: searchEnabled ? ['brave-search', 'openai'] : ['openai'],
+      claimsExtracted: response.claims.length,
+      evidenceRetrieved: totalEvidence,
+      usedCache: false,
+      processingTimeMs: processingTime,
+    });
+    
+    // Cache the result for future requests
+    await cacheAnalysis(inputHash, inputType, input, response, costEstimate);
+    console.log(`[Metering] Result cached with hash: ${inputHash.substring(0, 12)}...`);
+    
+    // Add metering metadata to response
+    const quotaAfter = await checkQuota(effectiveUserId, userTier, 'fact_check');
+    
+    return Response.json({
+      ...response,
+      _meta: {
+        cached: false,
+        cost: costEstimate,
+        processing_time_ms: processingTime,
+        remaining_checks: quotaAfter.remaining,
+      }
+    });
   } catch (err: unknown) {
     console.error("ANALYZE ERROR:", err);
     const details = err instanceof Error ? err.message : String(err);

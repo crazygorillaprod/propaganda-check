@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sanitizeUrl } from "@/lib/sanitize";
-import { AnalysisResult, EvidenceItem } from "@/lib/types";
+import { AnalysisResult, EvidenceItem, TeachingTake, type UsageTier } from "@/lib/types";
+import { TeachingTakeDisplay } from "@/components/TeachingTakeDisplay";
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -10,6 +11,41 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState("");
   const [showDetails, setShowDetails] = useState(false);
+  const [teachingTake, setTeachingTake] = useState<TeachingTake | null>(null);
+  const [loadingTeachingTake, setLoadingTeachingTake] = useState(false);
+  const [showTeachingTake, setShowTeachingTake] = useState(false);
+  const [tier, setTier] = useState<UsageTier>('free');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [showEmailGate, setShowEmailGate] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [emailError, setEmailError] = useState('');
+
+  // Check for stored email/tier on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const storedEmail = localStorage.getItem('user_email');
+    const storedTier = localStorage.getItem('user_tier') as UsageTier | null;
+
+    if (storedEmail) {
+      setUserEmail(storedEmail);
+      if (storedTier) setTier(storedTier);
+
+      // Refresh from server (Stripe/webhook source of truth)
+      fetch(`/api/me?email=${encodeURIComponent(storedEmail)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          const nextTier = data?.tier as UsageTier | undefined;
+          if (nextTier) {
+            setTier(nextTier);
+            localStorage.setItem('user_tier', nextTier);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setShowEmailGate(true);
+    }
+  }, []);
 
   function extractErrorFromJson(value: unknown): string | undefined {
     if (!value || typeof value !== 'object') return undefined;
@@ -21,16 +57,78 @@ export default function Home() {
     return undefined;
   }
 
+  function validateEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  function handleEmailSubmit() {
+    setEmailError('');
+    
+    if (!emailInput.trim()) {
+      setEmailError('Please enter your email address');
+      return;
+    }
+    
+    if (!validateEmail(emailInput)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+    
+    // Send email to backend
+    setLoading(true);
+    fetch('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailInput }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // Store email locally
+          localStorage.setItem('user_email', emailInput);
+          setUserEmail(emailInput);
+          setShowEmailGate(false);
+          
+          // Show verification message
+          if (process.env.NODE_ENV === 'development' && data.verificationToken) {
+            // In development, show the verification link
+            const verifyLink = `${window.location.origin}/verify?token=${data.verificationToken}`;
+            console.log('🔗 Verification link:', verifyLink);
+            alert(`Check console for verification link (in production, this would be emailed)`);
+          } else {
+            alert('Welcome! Check your email for verification link.');
+          }
+        } else {
+          setEmailError(data.error || 'Signup failed');
+        }
+      })
+      .catch(err => {
+        setEmailError('Network error: ' + err.message);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }
+
   async function analyze() {
+    // Check if email is required
+    if (tier === 'free' && !userEmail) {
+      setShowEmailGate(true);
+      return;
+    }
+
     setLoading(true);
     setError("");
     setResult(null);
+    setTeachingTake(null);
+    setShowTeachingTake(false);
 
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input, email: userEmail }),
       });
 
       const text = await res.text();
@@ -179,11 +277,131 @@ export default function Home() {
   }, 0) ?? 0;
 
   return (
-    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 32, fontWeight: 800 }}>Propaganda Check</h1>
+    <main style={{ maxWidth: 900, margin: "40px auto", padding: 16, position: 'relative' }}>
+      {/* Email Gate Modal */}
+      {showEmailGate && (
+        <div style={{ 
+          position: 'fixed', 
+          inset: 0, 
+          background: 'rgba(0, 0, 0, 0.5)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          zIndex: 50,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{ 
+            background: 'white', 
+            padding: 40, 
+            borderRadius: 16, 
+            maxWidth: 480, 
+            width: '90%',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎯</div>
+              <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Receipts Before Opinions</h2>
+              <p style={{ color: '#6b7280', fontSize: 15 }}>
+                Start fact-checking with 10 free checks per month. No credit card required.
+              </p>
+            </div>
+            
+            <div style={{ marginBottom: 20 }}>
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleEmailSubmit()}
+                placeholder="your@email.com"
+                style={{ 
+                  width: '100%', 
+                  padding: '14px 16px', 
+                  fontSize: 15, 
+                  border: emailError ? '2px solid #ef4444' : '1px solid #d1d5db',
+                  borderRadius: 8,
+                  outline: 'none'
+                }}
+              />
+              {emailError && (
+                <p style={{ color: '#ef4444', fontSize: 13, marginTop: 8 }}>{emailError}</p>
+              )}
+            </div>
+            
+            <button
+              onClick={handleEmailSubmit}
+              style={{ 
+                width: '100%',
+                padding: '14px 24px', 
+                background: '#2563eb', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: 8,
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: 'pointer',
+                marginBottom: 16
+              }}
+            >
+              Start Analyzing
+            </button>
+            
+            <div style={{ padding: '16px', background: '#f9fafb', borderRadius: 8, fontSize: 13, color: '#6b7280' }}>
+              <div style={{ marginBottom: 8, fontWeight: 600, color: '#374151' }}>Free tier includes:</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ color: '#10b981' }}>✓</span>
+                <span>10 fact checks per month</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ color: '#10b981' }}>✓</span>
+                <span>Live evidence from trusted sources</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#10b981' }}>✓</span>
+                <span>Teaching Take previews</span>
+              </div>
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb', fontSize: 12, color: '#9ca3af' }}>
+                Upgrade anytime → $25/month for 50 checks + full exports
+              </div>
+            </div>
+            
+            <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 16, textAlign: 'center' }}>
+              We respect your privacy. No spam, unsubscribe anytime.
+            </p>
+          </div>
+        </div>
+      )}
 
-      <p style={{ marginTop: 8, color: "#6b7280", fontSize: 15 }}>
-        Paste a claim, article URL, or headline. Get evidence-based analysis with claim verification.
+      <h1 style={{ fontSize: 32, fontWeight: 800 }}>
+        Propaganda Buster{' '}
+        <span style={{ fontSize: 14, fontWeight: 800, color: '#6b7280' }}>by BFMbreakdown</span>
+      </h1>
+
+      <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <a
+          href="/demo"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 12px',
+            fontSize: 13,
+            fontWeight: 800,
+            borderRadius: 10,
+            border: '1px solid #e5e7eb',
+            background: 'white',
+            color: '#111827',
+            textDecoration: 'none',
+          }}
+        >
+          Buyer demo →
+        </a>
+      </div>
+
+      <p style={{ marginTop: 8, color: "#374151", fontSize: 17, fontWeight: 500 }}>
+        Evidence-first analysis for people who speak publicly.
+      </p>
+      <p style={{ marginTop: 4, color: "#6b7280", fontSize: 14 }}>
+        Receipts before opinions. Think before you amplify.
       </p>
 
       <textarea
@@ -596,6 +814,66 @@ export default function Home() {
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* Teaching Take Section */}
+      {result && !showTeachingTake && (
+        <div style={{ marginTop: 24, padding: 24, background: 'linear-gradient(to right, #faf5ff, #eff6ff)', border: '1px solid #c4b5fd', borderRadius: 8 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+            📚 {tier === 'free' ? 'Never Spread Misinformation Again' : 'Get Your Teaching Take'}
+          </h3>
+          <p style={{ color: '#374151', marginBottom: 16, fontSize: 14 }}>
+            {tier === 'free' 
+              ? 'See how Pro users get instant rebuttal scripts, talk tracks, and exportable resources. Preview only—upgrade to unlock.'
+              : 'Generate a comprehensive Teaching Take with rebuttals, talk tracks, and action plans.'}
+          </p>
+          <button
+            onClick={async () => {
+              if (!result) return;
+              setLoadingTeachingTake(true);
+              try {
+                const res = await fetch("/api/teaching-take", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ analysisResult: result }),
+                });
+                const json = await res.json();
+                if (res.ok) {
+                  setTeachingTake(json);
+                  setShowTeachingTake(true);
+                }
+              } catch (err) {
+                console.error('Teaching take error:', err);
+              } finally {
+                setLoadingTeachingTake(false);
+              }
+            }}
+            disabled={loadingTeachingTake}
+            style={{ 
+              padding: '12px 24px', 
+              background: '#9333ea', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: 8, 
+              fontSize: 15,
+              fontWeight: 500,
+              cursor: loadingTeachingTake ? 'not-allowed' : 'pointer',
+              opacity: loadingTeachingTake ? 0.6 : 1
+            }}
+          >
+            {loadingTeachingTake ? "Generating..." : tier === 'free' ? "Preview Teaching Take" : "Generate Teaching Take"}
+          </button>
+        </div>
+      )}
+
+      {showTeachingTake && teachingTake && (
+        <div style={{ marginTop: 24 }}>
+          <TeachingTakeDisplay 
+            teachingTake={teachingTake}
+            topic={input}
+            isLocked={tier === 'free'}
+          />
         </div>
       )}
     </main>
