@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Header } from '@/components/Header';
 
 export default function PricingPage() {
   const [banner, setBanner] = useState<{ type: 'success' | 'cancel'; message: string } | null>(null);
@@ -54,62 +55,60 @@ export default function PricingPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(to bottom, #f9fafb, #ffffff)' }}>
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '80px 16px' }}>
-        {banner && (
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900">
+      <div className="mx-auto max-w-6xl px-4 pb-24 pt-6">
+        <Header />
+
+        {banner ? (
           <div
-            style={{
-              marginBottom: 24,
-              padding: 12,
-              borderRadius: 10,
-              border: '1px solid #e5e7eb',
-              background: banner.type === 'success' ? '#ecfdf5' : '#fffbeb',
-              color: '#374151',
-              fontWeight: 600,
-            }}
+            className={
+              banner.type === 'success'
+                ? 'mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900'
+                : 'mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900'
+            }
           >
             {banner.message}
           </div>
-        )}
+        ) : null}
 
-        {/* Header */}
-        <div style={{ textAlign: 'center', marginBottom: 64 }}>
-          <h1 style={{ fontSize: 48, fontWeight: 800, marginBottom: 16 }}>
+        <div className="mt-10 text-center">
+          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight">
             Not Getting Embarrassed: Priceless
           </h1>
-          <p style={{ fontSize: 20, color: '#6b7280', maxWidth: 600, margin: '0 auto' }}>
+          <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-slate-600">
             Evidence-first analysis for people who speak publicly.
           </p>
         </div>
 
         {/* Pricing Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, marginBottom: 80 }}>
-          {/* Free */}
-          <div style={{ background: 'white', padding: 32, borderRadius: 16, border: '1px solid #e5e7eb' }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Free</h3>
-            <div style={{ fontSize: 48, fontWeight: 800, marginBottom: 16 }}>$0</div>
-            <p style={{ color: '#6b7280', marginBottom: 24, fontSize: 14 }}>Try before you commit</p>
-            <ul style={{ listStyle: 'none', padding: 0, marginBottom: 24, fontSize: 15, lineHeight: 2 }}>
+        <div className="mt-12 grid gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-extrabold">Free</h3>
+            <div className="mt-3 text-4xl font-extrabold">$0</div>
+            <p className="mt-2 text-sm text-slate-600">Try before you commit</p>
+            <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 10 fact checks/month</li>
               <li>✓ Evidence-based analysis</li>
               <li>✓ Teaching Take previews</li>
-              <li style={{ color: '#9ca3af' }}>✗ No exports</li>
+              <li className="text-slate-400">✗ No exports</li>
             </ul>
-            <button style={{ width: '100%', padding: '12px 24px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: 8, cursor: 'pointer', fontWeight: 600 }}>
+            <button
+              type="button"
+              className="mt-5 w-full rounded-lg border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900"
+            >
               Current Plan
             </button>
-          </div>
+          </section>
 
-          {/* Pro */}
-          <div style={{ background: 'white', padding: 32, borderRadius: 16, border: '2px solid #8b5cf6', position: 'relative' }}>
-            <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: '#8b5cf6', color: 'white', padding: '4px 16px', borderRadius: 16, fontSize: 13, fontWeight: 600 }}>
+          <section className="relative rounded-2xl border-2 border-violet-400 bg-white p-6 shadow-sm">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-violet-600 px-3 py-1 text-xs font-extrabold text-white">
               MOST POPULAR
             </div>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Pro (Civic)</h3>
-            <div style={{ fontSize: 48, fontWeight: 800, marginBottom: 4 }}>$25</div>
-            <div style={{ color: '#6b7280', marginBottom: 16, fontSize: 14 }}>/month</div>
-            <p style={{ color: '#6b7280', marginBottom: 24, fontSize: 14 }}>For commentators & organizers</p>
-            <ul style={{ listStyle: 'none', padding: 0, marginBottom: 24, fontSize: 15, lineHeight: 2 }}>
+            <h3 className="text-lg font-extrabold">Pro (Civic)</h3>
+            <div className="mt-3 text-4xl font-extrabold">$25</div>
+            <div className="mt-1 text-sm text-slate-600">/month</div>
+            <p className="mt-2 text-sm text-slate-600">For commentators & organizers</p>
+            <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 50 fact checks/month</li>
               <li>✓ Full Teaching Takes</li>
               <li>✓ PDF & text exports</li>
@@ -117,20 +116,20 @@ export default function PricingPage() {
               <li>✓ Email support</li>
             </ul>
             <button
+              type="button"
               onClick={() => startCheckout('pro')}
-              style={{ width: '100%', padding: '14px 24px', background: '#8b5cf6', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 16 }}
+              className="mt-5 w-full rounded-lg bg-violet-600 px-4 py-3 text-sm font-extrabold text-white hover:bg-violet-700"
             >
               Upgrade to Pro
             </button>
-          </div>
+          </section>
 
-          {/* Creator */}
-          <div style={{ background: 'white', padding: 32, borderRadius: 16, border: '1px solid #e5e7eb' }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Creator</h3>
-            <div style={{ fontSize: 48, fontWeight: 800, marginBottom: 4 }}>$99</div>
-            <div style={{ color: '#6b7280', marginBottom: 16, fontSize: 14 }}>/month</div>
-            <p style={{ color: '#6b7280', marginBottom: 24, fontSize: 14 }}>Full Spectrum publishing</p>
-            <ul style={{ listStyle: 'none', padding: 0, marginBottom: 24, fontSize: 15, lineHeight: 2 }}>
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-extrabold">Creator</h3>
+            <div className="mt-3 text-4xl font-extrabold">$99</div>
+            <div className="mt-1 text-sm text-slate-600">/month</div>
+            <p className="mt-2 text-sm text-slate-600">Full Spectrum publishing</p>
+            <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 300 fact checks/month</li>
               <li>✓ Rollover unused checks</li>
               <li>✓ Everything in Pro</li>
@@ -138,20 +137,20 @@ export default function PricingPage() {
               <li>✓ Custom templates</li>
             </ul>
             <button
+              type="button"
               onClick={() => startCheckout('creator')}
-              style={{ width: '100%', padding: '14px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 16 }}
+              className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-extrabold text-white hover:bg-blue-700"
             >
               Upgrade to Creator
             </button>
-          </div>
+          </section>
 
-          {/* Organization */}
-          <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 32, borderRadius: 16, color: 'white' }}>
-            <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Organization</h3>
-            <div style={{ fontSize: 48, fontWeight: 800, marginBottom: 4 }}>$500</div>
-            <div style={{ opacity: 0.9, marginBottom: 16, fontSize: 14 }}>/month</div>
-            <p style={{ opacity: 0.9, marginBottom: 24, fontSize: 14 }}>Teams & advocacy groups</p>
-            <ul style={{ listStyle: 'none', padding: 0, marginBottom: 24, fontSize: 15, lineHeight: 2 }}>
+          <section className="rounded-2xl bg-slate-900 p-6 text-white shadow-sm">
+            <h3 className="text-lg font-extrabold">Organization</h3>
+            <div className="mt-3 text-4xl font-extrabold">$500</div>
+            <div className="mt-1 text-sm text-slate-300">/month</div>
+            <p className="mt-2 text-sm text-slate-200">Teams & advocacy groups</p>
+            <ul className="mt-4 space-y-2 text-sm text-slate-100">
               <li>✓ 1,000 fact checks/month</li>
               <li>✓ Up to 10 team seats</li>
               <li>✓ Shared analysis library</li>
@@ -159,92 +158,81 @@ export default function PricingPage() {
               <li>✓ Dedicated support</li>
             </ul>
             <button
+              type="button"
               onClick={() => startCheckout('organization')}
-              style={{ width: '100%', padding: '14px 24px', background: 'white', color: '#667eea', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 16 }}
+              className="mt-5 w-full rounded-lg bg-white px-4 py-3 text-sm font-extrabold text-slate-900 hover:bg-slate-100"
             >
               Upgrade to Organization
             </button>
-          </div>
+          </section>
         </div>
 
         {/* Who This Is For */}
-        <div style={{ marginBottom: 80 }}>
-          <h2 style={{ fontSize: 36, fontWeight: 800, textAlign: 'center', marginBottom: 48 }}>
-            Who This Is For
-          </h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 32 }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🎙️</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Political Commentators</h3>
-              <p style={{ color: '#6b7280', fontSize: 14 }}>
+        <section className="mt-16">
+          <h2 className="text-center text-2xl sm:text-4xl font-extrabold tracking-tight">Who This Is For</h2>
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+              <div className="text-4xl">🎙️</div>
+              <h3 className="mt-3 text-base font-extrabold">Political Commentators</h3>
+              <p className="mt-2 text-sm text-slate-600">
                 You speak publicly. One mistake damages credibility for months.
               </p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Journalists</h3>
-              <p style={{ color: '#6b7280', fontSize: 14 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+              <div className="text-4xl">📝</div>
+              <h3 className="mt-3 text-base font-extrabold">Journalists</h3>
+              <p className="mt-2 text-sm text-slate-600">
                 Fast verification with receipts. Your reputation is your career.
               </p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>📢</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Organizers</h3>
-              <p style={{ color: '#6b7280', fontSize: 14 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+              <div className="text-4xl">📢</div>
+              <h3 className="mt-3 text-base font-extrabold">Organizers</h3>
+              <p className="mt-2 text-sm text-slate-600">
                 Train your team. Consistent messaging. Legal protection.
               </p>
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>🎓</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Educators</h3>
-              <p style={{ color: '#6b7280', fontSize: 14 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+              <div className="text-4xl">🎓</div>
+              <h3 className="mt-3 text-base font-extrabold">Educators</h3>
+              <p className="mt-2 text-sm text-slate-600">
                 Teach media literacy with live examples. Show, don't tell.
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* FAQ */}
-        <div style={{ maxWidth: 700, margin: '0 auto' }}>
-          <h2 style={{ fontSize: 36, fontWeight: 800, textAlign: 'center', marginBottom: 48 }}>
-            Questions
-          </h2>
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ marginBottom: 32 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                Why not just use Google?
-              </h3>
-              <p style={{ color: '#6b7280', lineHeight: 1.7 }}>
+        <section className="mt-16">
+          <h2 className="text-center text-2xl sm:text-4xl font-extrabold tracking-tight">Questions</h2>
+          <div className="mx-auto mt-10 max-w-2xl space-y-6">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-extrabold">Why not just use Google?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 Google shows you results. We show you whether those results support, refute, or provide context for specific claims. Big difference.
               </p>
             </div>
-            <div style={{ marginBottom: 32 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                What happens when I hit my limit?
-              </h3>
-              <p style={{ color: '#6b7280', lineHeight: 1.7 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-extrabold">What happens when I hit my limit?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 You can still analyze cached results and export Teaching Takes. You just can't pull fresh evidence until next month or you upgrade.
               </p>
             </div>
-            <div style={{ marginBottom: 32 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                Can I cancel anytime?
-              </h3>
-              <p style={{ color: '#6b7280', lineHeight: 1.7 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-extrabold">Can I cancel anytime?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 Yes. No long-term contracts. 14-day money-back guarantee if you're not happy.
               </p>
             </div>
-            <div style={{ marginBottom: 32 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                Do you track my searches?
-              </h3>
-              <p style={{ color: '#6b7280', lineHeight: 1.7 }}>
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-extrabold">Do you track my searches?</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
                 We cache analysis results to save costs. We never sell data. See our privacy policy for details.
               </p>
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </section>
+      </div>
+    </main>
   );
 }
