@@ -214,14 +214,14 @@ describe('External Evidence Retrieval Integration', () => {
     test('should have all required fields', async () => {
       const mockSources = [
         {
-          title: 'Test Article',
+          title: 'Reuters announced a new policy',
           url: 'https://reuters.com/article',
-          snippet: 'Test snippet content',
+          snippet: 'Reuters announced the policy in a statement.',
           age: '2 days ago',
         },
       ];
 
-      const evidenceItems = await scoreEvidence('Test claim', mockSources);
+      const evidenceItems = await scoreEvidence('Reuters announced a new policy', mockSources);
       
       expect(evidenceItems.length).toBe(1);
       const item = evidenceItems[0];
@@ -259,18 +259,18 @@ describe('External Evidence Retrieval Integration', () => {
     test('should handle attribution boost in confidence calculation', async () => {
       const mockSources = [
         {
-          title: 'Test Article',
+          title: 'Reuters announced a new policy',
           url: 'https://reuters.com/article',
-          snippet: 'Test content',
+          snippet: 'Reuters announced the policy in a statement.',
         },
       ];
 
       // Without attribution
-      const evidenceWithoutAttr = await scoreEvidence('Test claim', mockSources);
+      const evidenceWithoutAttr = await scoreEvidence('Reuters announced a new policy', mockSources);
       const confWithoutAttr = evidenceWithoutAttr[0].confidence;
       
       // With attribution
-      const evidenceWithAttr = await scoreEvidence('Test claim', mockSources, 'DIRECT_QUOTE');
+      const evidenceWithAttr = await scoreEvidence('Reuters announced a new policy', mockSources, 'DIRECT_QUOTE');
       const confWithAttr = evidenceWithAttr[0].confidence;
       
       // Attribution should boost confidence
@@ -281,12 +281,12 @@ describe('External Evidence Retrieval Integration', () => {
   describe('Evidence Summary updates', () => {
     test('should count total sources correctly', async () => {
       const mockSources = [
-        { title: 'Article 1', url: 'https://reuters.com/1', snippet: 'content 1' },
-        { title: 'Article 2', url: 'https://bbc.com/2', snippet: 'content 2' },
-        { title: 'Article 3', url: 'https://apnews.com/3', snippet: 'content 3' },
+        { title: 'Reuters announced a new policy', url: 'https://reuters.com/1', snippet: 'Reuters announced the policy today.' },
+        { title: 'BBC: Reuters announced a new policy', url: 'https://bbc.com/2', snippet: 'BBC reports Reuters announced the policy.' },
+        { title: 'AP News: Reuters announced a new policy', url: 'https://apnews.com/3', snippet: 'AP notes Reuters announced the policy.' },
       ];
 
-      const evidenceItems = await scoreEvidence('Test claim', mockSources);
+      const evidenceItems = await scoreEvidence('Reuters announced a new policy', mockSources);
       
       expect(evidenceItems.length).toBe(3);
     });
@@ -347,6 +347,38 @@ describe('External Evidence Retrieval Integration', () => {
 
       const avgCred = evidence.reduce((sum, e) => sum + (e.credibilityScore || 0), 0) / evidence.length;
       expect(avgCred).toBeCloseTo(0.85, 2);
+    });
+  });
+
+  describe('Relevance gate (hard entity + action)', () => {
+    test('should reject broad context that matches only generic USA + action words', async () => {
+      const claim = 'Turning Point USA (TPUSA) will continue campus debates nationwide';
+
+      const mockSources = [
+        {
+          title: 'USA campus debates will continue nationwide, analysts say',
+          url: 'https://example.com/context',
+          snippet: 'A general piece about campus debates in the USA. It discusses debate culture and free speech broadly.',
+        },
+      ];
+
+      const evidenceItems = await scoreEvidence(claim, mockSources);
+      expect(evidenceItems.length).toBe(0);
+    });
+
+    test('should accept evidence that mentions a core entity and an action keyword', async () => {
+      const claim = 'Turning Point USA (TPUSA) will continue campus debates nationwide';
+
+      const mockSources = [
+        {
+          title: 'Turning Point USA says it will continue campus debates nationwide',
+          url: 'https://example.com/relevant',
+          snippet: 'Turning Point USA (TPUSA) announced it will continue hosting campus debates across the country.',
+        },
+      ];
+
+      const evidenceItems = await scoreEvidence(claim, mockSources);
+      expect(evidenceItems.length).toBe(1);
     });
   });
 });

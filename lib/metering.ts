@@ -162,7 +162,7 @@ export async function checkQuota(
       allowed: false, 
       remaining: 0,
       total_available: 0,
-      reason: 'Upgrade to Pro for unlimited analysis tools (Teaching Takes, rebuttals, action plans)'
+      reason: 'Upgrade to Pro for unlimited analysis tools (Civic Breakdowns, responses, action plans)'
     };
   }
   
@@ -181,7 +181,7 @@ export async function checkQuota(
     const upgradeMessage = tier === 'free' 
       ? 'Upgrade to Pro for 50 checks/month + unlimited analysis tools'
       : tier === 'pro'
-        ? 'Upgrade to Creator for 250 checks/month + multi-platform analysis'
+        ? 'Upgrade to Professional for 250 checks/month + multi-platform analysis'
         : 'You\'ve reached your monthly limit. Resets soon!';
     
     return {

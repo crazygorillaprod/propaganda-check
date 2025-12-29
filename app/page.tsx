@@ -30,6 +30,16 @@ export default function Home() {
   const emailGateTitleId = useMemo(() => "email-gate-title", []);
   const emailGateDescriptionId = useMemo(() => "email-gate-description", []);
 
+  const sharedParams = useMemo(() => {
+    if (typeof window === "undefined") return { q: "", share: false, autorun: false };
+    const params = new URLSearchParams(window.location.search);
+    return {
+      q: params.get("q") || "",
+      share: params.get("share") === "1",
+      autorun: params.get("autorun") === "1",
+    };
+  }, []);
+
   // Check for stored email/tier on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -53,9 +63,21 @@ export default function Home() {
         })
         .catch(() => {});
     } else {
-      setShowEmailGate(true);
+      // Allow shared links to load without the email gate.
+      if (sharedParams.share) {
+        setShowEmailGate(false);
+      } else {
+        setShowEmailGate(true);
+      }
     }
-  }, []);
+  }, [sharedParams.share]);
+
+  // Hydrate input from share link
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!sharedParams.q) return;
+    setInput(sharedParams.q);
+  }, [sharedParams.q]);
 
   useEffect(() => {
     if (!showEmailGate) return;
@@ -175,7 +197,7 @@ export default function Home() {
 
   async function analyze() {
     // Check if email is required
-    if (tier === "free" && !userEmail) {
+    if (tier === "free" && !userEmail && !sharedParams.share) {
       setShowEmailGate(true);
       return;
     }
@@ -190,7 +212,7 @@ export default function Home() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, email: userEmail }),
+        body: JSON.stringify({ input, email: userEmail, cacheOnly: sharedParams.share && !userEmail }),
       });
 
       const text = await res.text();
@@ -212,6 +234,19 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  // Optional autorun for shared links (will hit cache if already analyzed)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!sharedParams.autorun) return;
+    if (!sharedParams.q || sharedParams.q.trim().length < 8) return;
+    // If the email gate is open, don't autorun until user closes it.
+    if (showEmailGate) return;
+    // Avoid re-running if we already have a result.
+    if (result) return;
+    analyze();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedParams.autorun, sharedParams.q, showEmailGate]);
 
   async function generateTeachingTake() {
     if (!result) return;
@@ -355,7 +390,7 @@ export default function Home() {
               <ul className="mt-2 space-y-1 text-sm text-slate-700">
                 <li>• 10 fact checks per month</li>
                 <li>• Live evidence from trusted sources</li>
-                <li>• Teaching Take previews</li>
+                <li>• Civic Breakdown previews</li>
               </ul>
               <div className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500">
                 Upgrade anytime → $25/month for 50 checks + exports
@@ -404,7 +439,15 @@ export default function Home() {
 
         {result ? (
           <div className="mt-6 space-y-4">
-            <ResultTopline result={result} />
+            {typeof result?._meta?.remaining_checks === 'number' ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                Checks remaining this month: <span className="font-semibold">{result._meta.remaining_checks}</span>
+                {result._meta.cached ? (
+                  <span className="text-slate-500"> • cached result (doesn’t use a check)</span>
+                ) : null}
+              </div>
+            ) : null}
+            <ResultTopline result={result} shareInput={input} />
             <AnalysisTabs
               input={input}
               result={result}

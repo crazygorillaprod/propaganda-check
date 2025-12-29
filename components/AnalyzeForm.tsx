@@ -48,7 +48,7 @@ export function AnalyzeForm({ value, onChange, onAnalyze, onClear, disabled, loa
       </div>
 
       <p className="mt-3 text-xs text-slate-500">
-        Tip: Start with a single, checkable claim or paste a URL.
+        Tip: Paste a quote, claim, headline, or link from a politician, agency, or news story. We’ll pull sources and show what’s verified, what’s unclear, and what to say back.
       </p>
     </section>
   );

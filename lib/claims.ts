@@ -21,6 +21,7 @@ function baselineCheckabilityForType(type: ClaimType): number {
   if (type === 'EVENT') return 0.7;
   if (type === 'QUOTE') return 0.6;
   if (type === 'SCHEDULE') return 0.55;
+  if (type === 'FRAMING') return 0.25;
 
   // Conservative defaults for other claim types
   if (type === 'POLICY') return 0.65;
@@ -194,10 +195,11 @@ export async function extractStructuredClaims(
           role: 'system',
           content: [
             'Extract 3-6 checkable claims from the text.',
+            'If the text contains non-checkable interpretation/characterization (e.g., motives, virtue/villain framing, "fighting for a legacy", "trying to make you feel"), you may include up to 2 of those as type "FRAMING".',
             'Do NOT extract claims about the publisher/outlet, authorship, URL/canonical URL, or that an article was published by X. Those belong to source metadata, not factual claims.',
             'For each claim, provide:',
             '- text: the claim statement',
-            '- type: "QUOTE" (someone said X), "EVENT" (X happened), "SCHEDULE" (X will happen), "POLICY" (rule/law/decision), or "OTHER"',
+            '- type: "QUOTE" (someone said X), "EVENT" (X happened), "SCHEDULE" (X will happen), "POLICY" (rule/law/decision), "FRAMING" (interpretation/characterization), or "OTHER"',
             '- importance: 0-1 (how central to the main argument)',
             '',
             'Return JSON: { claims: Array<{ text: string, type: string, importance: number }> }',
@@ -215,11 +217,35 @@ export async function extractStructuredClaims(
     const rawClaims: RawClaimExtraction[] = Array.isArray(result.claims)
       ? result.claims.slice(0, 6)
       : [];
+
+    const inferFramingType = (claimText: string): boolean => {
+      const t = (claimText || '').toLowerCase();
+      // Characterization / motive / emotional framing language (not reliably checkable)
+      const patterns: RegExp[] = [
+        /\b(fighting\s+for|protecting\s+.*legacy|legacy)\b/,
+        /\b(trying\s+to|aims\s+to|wants\s+to|hopes\s+to|seeks\s+to)\b/,
+        /\b(attack\s+on|war\s+on|hate\s+filled|evil|hero|villain)\b/,
+        /\b(should|must)\s+.*\b(believe|feel|think)\b/,
+        /\b(spin|propaganda|narrative)\b/,
+      ];
+
+      // Avoid mislabeling straightforward quotes/events as framing.
+      const hasQuote = /(?:"[^"\n]{5,}"|“[^”\n]{5,}”)/.test(claimText || '');
+      const hasConcreteEventVerb = /\b(announced|said|stated|confirmed|denied|launched|started|ended|canceled|postponed|implemented|signed|passed|approved)\b/.test(t);
+      if (hasQuote || hasConcreteEventVerb) return false;
+
+      return patterns.some((p) => p.test(t));
+    };
     
     return rawClaims.map(raw => {
-      const type: ClaimType = ['QUOTE', 'EVENT', 'SCHEDULE', 'POLICY', 'OTHER'].includes(raw.type)
+      let type: ClaimType = ['QUOTE', 'EVENT', 'SCHEDULE', 'POLICY', 'FRAMING', 'OTHER'].includes(raw.type)
         ? (raw.type as ClaimType)
         : 'OTHER';
+
+      // Conservative post-pass: reclassify subjective characterization as FRAMING.
+      if (type !== 'FRAMING' && inferFramingType(raw.text || '')) {
+        type = 'FRAMING';
+      }
 
       return {
         text: raw.text || '',

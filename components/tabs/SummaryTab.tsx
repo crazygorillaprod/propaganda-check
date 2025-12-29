@@ -98,17 +98,19 @@ export function SummaryTab({
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-semibold text-slate-500">Verification score</div>
-          <div className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">
-            {ranWithSources && typeof overall?.score === 'number' ? `${overall.score}/100` : 'N/A'}
+        {tier !== 'free' ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-semibold text-slate-500">Verification score</div>
+            <div className="mt-1 text-3xl font-extrabold tracking-tight text-slate-900">
+              {ranWithSources && typeof overall?.score === 'number' ? `${overall.score}/100` : 'N/A'}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              {ranWithSources
+                ? 'Based on retrieved sources for the extracted claims.'
+                : 'Score is only available after evidence retrieval returns sources.'}
+            </div>
           </div>
-          <div className="mt-2 text-sm text-slate-600">
-            {ranWithSources
-              ? 'Based on retrieved sources for the extracted claims.'
-              : 'Score is only available after evidence retrieval returns sources.'}
-          </div>
-        </div>
+        ) : null}
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold text-slate-500">Language risk</div>
@@ -116,9 +118,6 @@ export function SummaryTab({
             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${language.badge}`}>
               {language.label}
             </span>
-            {language.showNumeric && typeof result.tactics?.score_0_to_100 === 'number' ? (
-              <span className="text-xs font-semibold text-slate-600">Score: {result.tactics.score_0_to_100}/100</span>
-            ) : null}
           </div>
           {result.tactics?.flags?.length ? (
             <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -138,7 +137,7 @@ export function SummaryTab({
 
       {result.rebuttal?.short ? (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-semibold text-slate-900">Calm rebuttal</div>
+          <div className="text-sm font-semibold text-slate-900">What to say back</div>
           <p className="mt-2 text-sm leading-relaxed text-slate-700">{result.rebuttal.short}</p>
           {result.rebuttal.medium ? (
             <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -153,12 +152,12 @@ export function SummaryTab({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-slate-900">
-              {tier === 'free' ? 'Teaching Take preview' : 'Teaching Take'}
+              {tier === 'free' ? 'Civic Breakdown (Pro)' : 'Civic Breakdown'}
             </div>
             <p className="mt-1 text-sm text-slate-600">
               {tier === 'free'
-                ? 'Preview rebuttal scripts, talk tracks, and export tools. Upgrade to unlock full access.'
-                : 'Generate rebuttal scripts, talk tracks, and exportable resources from this analysis.'}
+                ? 'Preview a plain-language summary and a short, receipts-based response. Upgrade for full action plans and exports.'
+                : 'Generate a plain-language summary, receipts-based responses, and an action plan you can share.'}
             </p>
           </div>
           <button
@@ -167,7 +166,7 @@ export function SummaryTab({
             disabled={loadingTeachingTake}
             className="inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loadingTeachingTake ? 'Generating…' : tier === 'free' ? 'Preview Teaching Take' : 'Generate Teaching Take'}
+            {loadingTeachingTake ? 'Generating…' : tier === 'free' ? 'Preview Civic Breakdown' : 'Generate Civic Breakdown'}
           </button>
         </div>
 

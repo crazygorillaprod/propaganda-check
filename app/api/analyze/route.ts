@@ -93,7 +93,7 @@ function deriveDeterministicVerdict(
   const allEvidence: EvidenceItem[] = claim.evidence || [];
   const corroborationEvidence = allEvidence.filter((e) => e.role !== 'INPUT');
   const hasInputEvidence = allEvidence.some((e) => e.role === 'INPUT');
-
+    // 2.5) Detect attribution for each claim (if we have article text)
   if (corroborationEvidence.length === 0) {
     if (hasInputEvidence) {
       return {
@@ -297,7 +297,7 @@ export async function POST(req: Request) {
   
   try {
     const body = await req.json();
-    const { input: rawInput, userId, tier, email } = body;
+    const { input: rawInput, userId, tier, email, cacheOnly } = body;
 
     if (!rawInput || typeof rawInput !== "string" || rawInput.trim().length < 8) {
       return Response.json({ error: "Missing input" }, { status: 400 });
@@ -336,6 +336,8 @@ export async function POST(req: Request) {
         usedCache: true,
         processingTimeMs: Date.now() - startTime,
       });
+
+      const quotaAfter = await checkQuota(effectiveUserId, userTier, 'fact_check');
       
       return Response.json({
         ...cached.analysis_result,
@@ -344,8 +346,21 @@ export async function POST(req: Request) {
           cost: 0,
           cache_saved: cached.original_cost,
           processing_time_ms: Date.now() - startTime,
+          remaining_checks: quotaAfter.remaining,
         }
       });
+    }
+
+    // Share links should never trigger new evidence pulls.
+    if (cacheOnly) {
+      return Response.json(
+        {
+          error: 'Not available',
+          message: 'This shared result is not available in cache. Ask the sender to re-run it, or run your own check.',
+          cached: false,
+        },
+        { status: 404 }
+      );
     }
     
     // Check quota before performing expensive analysis

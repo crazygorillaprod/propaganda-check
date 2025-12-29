@@ -152,7 +152,7 @@ export function UsageDashboard({ userId, tier }: UsageDashboardProps) {
             )}
             {tier === 'pro' && (
               <button className="w-full bg-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-purple-700">
-                Upgrade to Creator - 250 checks/month + multi-platform
+                Upgrade to Professional - 250 checks/month + multi-platform
               </button>
             )}
           </div>
@@ -166,7 +166,7 @@ export function UsageDashboard({ userId, tier }: UsageDashboardProps) {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Analysis Runs</h3>
               <p className="text-sm text-gray-500 mt-1">
-                Teaching Takes, rebuttals, action plans
+                Civic Breakdowns, responses, action plans
               </p>
             </div>
             <span className="text-2xl font-bold text-green-600">
@@ -212,9 +212,9 @@ export function UsageDashboard({ userId, tier }: UsageDashboardProps) {
         <h4 className="text-sm font-semibold text-blue-900 mb-2">💡 Pro Tip</h4>
         <p className="text-sm text-blue-800">
           {tier === 'free' 
-            ? 'Each fact check retrieves live evidence. Upgrade to Pro for 50 checks/month plus unlimited Teaching Takes and rebuttals.'
+            ? 'Each fact check retrieves live evidence. Upgrade to Pro for 50 checks/month plus unlimited Civic Breakdowns and responses.'
             : tier === 'pro'
-              ? 'Run 1 fact check, then generate unlimited rebuttals, teaching takes, and action plans from that evidence!'
+              ? 'Run 1 fact check, then generate unlimited responses, Civic Breakdowns, and action plans from that evidence!'
               : 'Your rollover credits accumulate up to 2× your monthly limit. Unused checks never go to waste!'}
         </p>
       </div>

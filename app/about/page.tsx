@@ -22,6 +22,55 @@ export default function AboutPage() {
           </p>
         </section>
 
+        {/* Mission */}
+        <section className="mt-12 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-extrabold">Our Mission</h2>
+          <div className="mt-4 space-y-3 text-sm leading-relaxed text-slate-700">
+            <p>
+              <strong className="text-slate-900">Propaganda Buster</strong> exists to help people check the claims made by those in power.
+              We provide evidence-first analysis, clear sourcing, and plain-language explanations so the public can understand what’s true, what’s unclear, and what’s spin — and respond responsibly.
+            </p>
+            <p>
+              Our goal is to strengthen democracy by promoting transparency, accountability, and informed public discussion,
+              without telling people what to think.
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5">
+            <div className="text-sm font-extrabold text-slate-900">Why this works</div>
+            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Centers power, not users (“claims made by those in power”)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Evidence-first (journalist-safe)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Plain language (public-safe)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Pro-democracy without partisan language</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Legally and constitutionally safe</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Avoids moralizing or accusations</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="mt-0.5 text-emerald-600">✓</span>
+                <span>Positions the tool as infrastructure, not activism</span>
+              </li>
+            </ul>
+          </div>
+        </section>
+
         {/* What We Are */}
         <section className="mt-12 rounded-xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
           <h2 className="text-xl font-extrabold">What This Is (And Isn't)</h2>

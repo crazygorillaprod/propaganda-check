@@ -193,7 +193,8 @@ export function build_queries_for_claim(claim: string, claimType?: string): stri
     if (properNouns || acronyms) {
       const entities = [...(acronyms || []), ...(properNouns?.slice(0, 2) || [])];
       const actionWords = extractActionKeywords(claim);
-      queries.push(`${entities.join(' ')} ${actionWords.join(' ')}`);
+      const tail = actionWords.length > 0 ? ` ${actionWords.join(' ')}` : '';
+      queries.push(`${entities.join(' ')}${tail}`.trim());
     }
     
     // Query 3: Full claim without generic words
@@ -248,18 +249,91 @@ export function build_queries_for_claim(claim: string, claimType?: string): stri
   return Array.from(new Set(queries.filter(q => q && q.trim().length > 5))).slice(0, 3);
 }
 
+function normalizeForMatch(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function containsToken(normalizedHaystack: string, normalizedNeedle: string): boolean {
+  if (!normalizedNeedle) return false;
+  if (normalizedNeedle.includes(' ')) {
+    return normalizedHaystack.includes(normalizedNeedle);
+  }
+  return new RegExp(`\\b${escapeRegExp(normalizedNeedle)}\\b`, 'i').test(normalizedHaystack);
+}
+
+function dedupePreserveOrder(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    if (!item) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
+}
+
 /**
  * Helper to extract action keywords (shared with evidence.ts logic)
  */
 function extractActionKeywords(claim: string): string[] {
-  const actionVerbs = [
-    'continue', 'host', 'announce', 'said', 'stated', 'confirmed', 
-    'denied', 'plan', 'plans', 'will', 'launched', 'started', 
-    'ended', 'canceled', 'postponed', 'debate', 'debates', 'event'
+  const actionWords = [
+    // Speech / announcement
+    'announce', 'announced', 'announcement',
+    'say', 'says', 'said',
+    'state', 'states', 'stated',
+    'confirm', 'confirms', 'confirmed',
+    'deny', 'denies', 'denied',
+    'claim', 'claims', 'claimed',
+    // Plans / scheduling / actions
+    'continue', 'continues', 'continued',
+    'host', 'hosts', 'hosted',
+    'launch', 'launched',
+    'start', 'starts', 'started',
+    'end', 'ends', 'ended',
+    'cancel', 'canceled', 'cancelled',
+    'postpone', 'postponed',
+    'implement', 'implemented',
+    'create', 'created',
+    // Policy / legal
+    'ban', 'banned',
+    'require', 'required',
+    'pass', 'passed',
+    'sign', 'signed',
+    'approve', 'approved',
+    // Metrics / changes
+    'rise', 'rises', 'rose', 'rising',
+    'increase', 'increases', 'increased',
+    'decrease', 'decreases', 'decreased',
+    'fall', 'falls', 'fell', 'falling',
+    // Common event nouns
+    'debate', 'debates',
+    'event', 'events',
+    'rally', 'rallies',
+    'speech', 'speeches',
+    'interview', 'interviews',
+    'vote', 'votes', 'voted',
+    // Context nouns often tied to actions
+    'campus', 'campuses',
+    'nationwide',
   ];
-  
-  const claimLower = claim.toLowerCase();
-  return actionVerbs.filter(verb => claimLower.includes(verb));
+
+  const claimNorm = normalizeForMatch(claim);
+  const found = actionWords
+    .map((w) => normalizeForMatch(w))
+    .filter(Boolean)
+    .filter((w) => containsToken(claimNorm, w));
+
+  // Keep queries tight: a few keywords is plenty.
+  return dedupePreserveOrder(found).slice(0, 5);
 }
 
 /**

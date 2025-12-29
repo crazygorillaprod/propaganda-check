@@ -10,6 +10,132 @@ type RawSource = {
   age?: string;
 };
 
+const GENERIC_ENTITY_STOPLIST = new Set([
+  // Very common acronyms/terms that cause false relevance matches
+  'us',
+  'u s',
+  'u.s',
+  'u.s.',
+  'usa',
+  'u s a',
+  'uk',
+  'eu',
+  'un',
+  'nato',
+  // Overly generic news words
+  'news',
+  'report',
+  'reports',
+  'update',
+]);
+
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'but', 'if', 'then', 'than',
+  'to', 'of', 'in', 'on', 'at', 'by', 'for', 'from', 'with', 'about',
+  'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'will', 'would', 'could', 'should', 'may', 'might',
+  'it', 'its', 'this', 'that', 'these', 'those',
+  'he', 'she', 'they', 'them', 'we', 'you', 'i',
+  'not', 'no', 'yes',
+]);
+
+const ENTITY_FALLBACK_EXCLUDE = new Set([
+  // Common action/context terms that should not become "entities"
+  'announce', 'announced', 'announcement',
+  'say', 'says', 'said',
+  'state', 'states', 'stated',
+  'confirm', 'confirms', 'confirmed',
+  'deny', 'denies', 'denied',
+  'claim', 'claims', 'claimed',
+  'continue', 'continues', 'continued',
+  'host', 'hosts', 'hosted',
+  'launch', 'launched',
+  'start', 'starts', 'started',
+  'end', 'ends', 'ended',
+  'cancel', 'canceled', 'cancelled',
+  'postpone', 'postponed',
+  'implement', 'implemented',
+  'create', 'created',
+  'ban', 'banned',
+  'require', 'required',
+  'pass', 'passed',
+  'sign', 'signed',
+  'approve', 'approved',
+  'rise', 'rises', 'rose', 'rising',
+  'increase', 'increases', 'increased',
+  'decrease', 'decreases', 'decreased',
+  'fall', 'falls', 'fell', 'falling',
+  'debate', 'debates',
+  'event', 'events',
+  'rally', 'rallies',
+  'speech', 'speeches',
+  'interview', 'interviews',
+  'vote', 'votes', 'voted',
+  'campus', 'campuses',
+  'nationwide',
+]);
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeForMatch(text: string): string {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenize(text: string): string[] {
+  const normalized = normalizeForMatch(text);
+  if (!normalized) return [];
+  return normalized.split(' ').filter(Boolean);
+}
+
+function dedupePreserveOrder(items: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    if (!item) continue;
+    if (seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
+}
+
+function containsToken(normalizedHaystack: string, normalizedNeedle: string): boolean {
+  if (!normalizedNeedle) return false;
+  if (normalizedNeedle.includes(' ')) {
+    return normalizedHaystack.includes(normalizedNeedle);
+  }
+  return new RegExp(`\\b${escapeRegExp(normalizedNeedle)}\\b`, 'i').test(normalizedHaystack);
+}
+
+function pruneGenericEntities(entities: string[]): string[] {
+  const normalized = entities
+    .map((e) => normalizeForMatch(e))
+    .filter(Boolean)
+    .filter((e) => {
+      if (GENERIC_ENTITY_STOPLIST.has(e)) return false;
+      // Keep numbers like 8.5 or 2024, but drop extremely short tokens like "us".
+      const isNumeric = /^\d+(?:\.\d+)?%?$/.test(e);
+      if (!isNumeric && e.length < 3) return false;
+      return true;
+    });
+
+  // Prefer longer, more specific entities; drop entities that are substrings of longer ones.
+  const byLengthDesc = [...dedupePreserveOrder(normalized)].sort((a, b) => b.length - a.length);
+  const kept: string[] = [];
+  for (const ent of byLengthDesc) {
+    if (kept.some((k) => k.includes(ent))) continue;
+    kept.push(ent);
+  }
+  // Return in original-ish order (longest-first is fine for matching, but preserve determinism).
+  return kept;
+}
+
 const LOW_CREDIBILITY_INDICATORS = [
   'blog', 'wordpress', 'medium.com', 'substack', 'twitter.com', 'x.com',
   'facebook.com', 'instagram.com', 'tiktok.com', 'reddit.com'
@@ -20,41 +146,100 @@ const LOW_CREDIBILITY_INDICATORS = [
  */
 function extractEntities(claim: string): string[] {
   const entities: string[] = [];
-  
-  // Quoted phrases (exact matches)
+
+  // Quoted phrases (often the most precise)
   const quotedMatches = claim.match(/"([^"]+)"/g);
   if (quotedMatches) {
-    quotedMatches.forEach(q => entities.push(q.replace(/"/g, '').toLowerCase()));
+    quotedMatches.forEach((q) => entities.push(q.replace(/"/g, '')));
   }
-  
-  // Capitalized phrases (likely names/orgs)
-  const capitalizedMatches = claim.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g);
-  if (capitalizedMatches) {
-    capitalizedMatches.forEach(cap => entities.push(cap.toLowerCase()));
+
+  // Capitalized terms/phrases (names, orgs, places) INCLUDING single-word entities (e.g., "Reuters")
+  const capped = claim.match(/\b(?:[A-Z][a-z]+|[A-Z]{2,})(?:\s+(?:[A-Z][a-z]+|[A-Z]{2,}))*\b/g);
+  if (capped) {
+    capped.forEach((c) => entities.push(c));
   }
-  
-  // Acronyms (2+ caps)
-  const acronyms = claim.match(/\b[A-Z]{2,}\b/g);
-  if (acronyms) {
-    acronyms.forEach(acr => entities.push(acr.toLowerCase()));
+
+  // Numbers and dates
+  const numbers = claim.match(/\b\d+(?:\.\d+)?%?\b/g);
+  if (numbers) {
+    numbers.forEach((n) => entities.push(n));
   }
-  
-  return entities;
+
+  // Fallback: take a few meaningful tokens so generic/lowercased claims still have "entities".
+  // This keeps the hard gate usable even when the claim has no obvious proper nouns.
+  const fallbackTokens = tokenize(claim)
+    .filter((t) => !STOPWORDS.has(t))
+    .filter((t) => !/^\d+(?:\.\d+)?%?$/.test(t))
+    .filter((t) => !ENTITY_FALLBACK_EXCLUDE.has(t))
+    .filter((t) => t.length >= 4)
+    .slice(0, 6);
+  entities.push(...fallbackTokens);
+
+  return pruneGenericEntities(entities);
 }
 
 /**
  * Extract action keywords from claim
  */
 function extractActionKeywords(claim: string): string[] {
-  const actionVerbs = [
-    'continue', 'host', 'announce', 'said', 'stated', 'confirmed', 
-    'denied', 'plan', 'plans', 'will', 'launched', 'started', 
-    'ended', 'canceled', 'postponed', 'implemented', 'created',
-    'debate', 'debates', 'event', 'nationwide', 'campus'
+  const actionWords = [
+    // Speech / announcement
+    'announce', 'announced', 'announcement',
+    'say', 'says', 'said',
+    'state', 'states', 'stated',
+    'confirm', 'confirms', 'confirmed',
+    'deny', 'denies', 'denied',
+    'claim', 'claims', 'claimed',
+    // Plans / scheduling / actions
+    'continue', 'continues', 'continued',
+    'host', 'hosts', 'hosted',
+    'launch', 'launched',
+    'start', 'starts', 'started',
+    'end', 'ends', 'ended',
+    'cancel', 'canceled', 'cancelled',
+    'postpone', 'postponed',
+    'implement', 'implemented',
+    'create', 'created',
+    // Policy / legal
+    'ban', 'banned',
+    'require', 'required',
+    'pass', 'passed',
+    'sign', 'signed',
+    'approve', 'approved',
+    // Metrics / changes
+    'rise', 'rises', 'rose', 'rising',
+    'increase', 'increases', 'increased',
+    'decrease', 'decreases', 'decreased',
+    'fall', 'falls', 'fell', 'falling',
+    // Common event nouns
+    'debate', 'debates',
+    'event', 'events',
+    'rally', 'rallies',
+    'speech', 'speeches',
+    'interview', 'interviews',
+    'vote', 'votes', 'voted',
+    // Context nouns that are often action-defining
+    'campus', 'campuses',
+    'nationwide',
   ];
-  
-  const claimLower = claim.toLowerCase();
-  return actionVerbs.filter(verb => claimLower.includes(verb));
+
+  const claimNorm = normalizeForMatch(claim);
+  const found = actionWords
+    .map((w) => normalizeForMatch(w))
+    .filter(Boolean)
+    .filter((w) => containsToken(claimNorm, w));
+
+  if (found.length > 0) return dedupePreserveOrder(found);
+
+  // Fallback: choose a couple of non-stopword tokens (excluding obvious entities)
+  const entityTokens = new Set(extractEntities(claim));
+  const fallback = tokenize(claim)
+    .filter((t) => !STOPWORDS.has(t))
+    .filter((t) => !/^\d+(?:\.\d+)?%?$/.test(t))
+    .filter((t) => !entityTokens.has(t))
+    .filter((t) => t.length >= 4)
+    .slice(0, 2);
+  return dedupePreserveOrder(fallback);
 }
 
 /**
@@ -64,23 +249,20 @@ function extractActionKeywords(claim: string): string[] {
 export function calculateRelevanceScore(claim: string, evidenceTitle: string, evidenceSnippet: string): number {
   const entities = extractEntities(claim);
   const actionKeywords = extractActionKeywords(claim);
-  const evidenceText = `${evidenceTitle} ${evidenceSnippet}`.toLowerCase();
+  const evidenceText = normalizeForMatch(`${evidenceTitle} ${evidenceSnippet}`);
   
   // Count entity matches
-  const matchingEntities = entities.filter(entity => evidenceText.includes(entity));
+  const matchingEntities = entities.filter((entity) => containsToken(evidenceText, entity));
   const entityMatchRatio = entities.length > 0 ? matchingEntities.length / entities.length : 0;
   
   // Count action keyword matches
-  const matchingKeywords = actionKeywords.filter(kw => evidenceText.includes(kw));
+  const matchingKeywords = actionKeywords.filter((kw) => containsToken(evidenceText, kw));
   const keywordMatchRatio = actionKeywords.length > 0 ? matchingKeywords.length / actionKeywords.length : 0;
   
-  // GATE RULE: Must have at least 1 entity match AND 1 keyword match (if both exist)
-  if (entities.length > 0 && matchingEntities.length === 0) {
-    return 0.1; // No entity match = irrelevant
-  }
-  
-  if (actionKeywords.length > 0 && matchingKeywords.length === 0) {
-    return 0.2; // No action keyword match = likely irrelevant
+  // HARD GATE: Evidence must mention at least one core entity AND at least one action keyword.
+  // This prevents broad context pieces (e.g., generic "USA" mentions) from being accepted as corroboration.
+  if (matchingEntities.length === 0 || matchingKeywords.length === 0) {
+    return 0;
   }
   
   // Calculate combined relevance score
@@ -228,7 +410,8 @@ function parsePublishDate(ageString: string): string | undefined {
 export async function analyzeSourceStance(
   claim: string,
   evidence: EvidenceItem[],
-  openai: OpenAI
+  openai: OpenAI,
+  claimType?: string
 ): Promise<EvidenceItem[]> {
   if (evidence.length === 0) return evidence;
   
@@ -264,6 +447,35 @@ export async function analyzeSourceStance(
     const result = JSON.parse(response.choices[0]?.message?.content || '{}');
     const stances: Array<{ index: number; stance: string }> = result.stances || [];
     
+    const claimIsQuote = claimType === 'QUOTE' || /(?:"[^"\n]{5,}"|“[^”\n]{5,}”)/.test(claim);
+
+    const passesStrictSupportGate = (ev: EvidenceItem): boolean => {
+      const evidenceText = normalizeForMatch(`${ev.title} ${ev.snippet}`);
+      const entities = extractEntities(claim);
+      const matchingEntities = entities.filter((ent) => containsToken(evidenceText, ent));
+
+      // Must share at least one non-generic entity.
+      if (matchingEntities.length === 0) return false;
+
+      if (claimIsQuote) {
+        const quotedMatches = claim.match(/"([^"]+)"/g) || claim.match(/“([^”]+)”/g);
+        const quotedPhrases = (quotedMatches || [])
+          .map((q) => q.replace(/["“”]/g, ''))
+          .map((q) => normalizeForMatch(q))
+          .filter(Boolean);
+
+        // For quote claims, require the quoted phrase (or a substantial sub-phrase) to appear.
+        if (quotedPhrases.length === 0) return false;
+        return quotedPhrases.some((phrase) => {
+          if (phrase.length < 8) return false;
+          return evidenceText.includes(phrase);
+        });
+      }
+
+      // For non-quote claims, require concept/action match (entity + action gate).
+      return calculateRelevanceScore(claim, ev.title, ev.snippet) > 0;
+    };
+
     // Update evidence with stances
     return evidence.map((e, idx) => {
       const stanceData = stances.find(s => s.index === idx);
@@ -279,11 +491,21 @@ export async function analyzeSourceStance(
                 ? 'context'
               : 'unclear';
 
+        let finalStance: EvidenceItem['stance'] = stance;
+        let finalStanceTowards: EvidenceItem['stanceTowardsClaim'] = stanceTowardsClaim;
+
+        // HARD QUALITY RULE:
+        // Don’t allow broad context to become “support/refute”. If it fails strict matching, downgrade to context.
+        if ((stance === 'support' || stance === 'refute') && !passesStrictSupportGate(e)) {
+          finalStance = 'context';
+          finalStanceTowards = 'context';
+        }
+
         return {
           ...e,
-          stance,
-          stanceTowardsClaim,
-          supports_claim: stance === 'support',
+          stance: finalStance,
+          stanceTowardsClaim: finalStanceTowards,
+          supports_claim: finalStance === 'support',
         };
       }
       return e;

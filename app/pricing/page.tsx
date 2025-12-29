@@ -86,7 +86,7 @@ export default function PricingPage() {
             Not Getting Embarrassed: Priceless
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-base sm:text-lg text-slate-600">
-            Evidence-first analysis for people who speak publicly.
+            Evidence-first checks on political claims and power.
           </p>
         </div>
 
@@ -99,7 +99,7 @@ export default function PricingPage() {
             <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 10 fact checks/month</li>
               <li>✓ Evidence-based analysis</li>
-              <li>✓ Teaching Take previews</li>
+              <li>✓ Civic Breakdown previews</li>
               <li className="text-slate-400">✗ No exports</li>
             </ul>
             <button
@@ -120,7 +120,7 @@ export default function PricingPage() {
             <p className="mt-2 text-sm text-slate-600">For commentators & organizers</p>
             <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 50 fact checks/month</li>
-              <li>✓ Full Teaching Takes</li>
+              <li>✓ Full Civic Breakdowns</li>
               <li>✓ PDF & text exports</li>
               <li>✓ Social media snippets</li>
               <li>✓ Email support</li>
@@ -135,10 +135,10 @@ export default function PricingPage() {
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-extrabold">Creator</h3>
+            <h3 className="text-lg font-extrabold">Professional</h3>
             <div className="mt-3 text-4xl font-extrabold">$99</div>
             <div className="mt-1 text-sm text-slate-600">/month</div>
-            <p className="mt-2 text-sm text-slate-600">Full Spectrum publishing</p>
+            <p className="mt-2 text-sm text-slate-600">Higher-volume checks + exports</p>
             <ul className="mt-4 space-y-2 text-sm text-slate-700">
               <li>✓ 300 fact checks/month</li>
               <li>✓ Rollover unused checks</li>
@@ -151,7 +151,7 @@ export default function PricingPage() {
               onClick={() => startCheckout('creator')}
               className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-extrabold text-white hover:bg-blue-700"
             >
-              Upgrade to Creator
+              Upgrade to Professional
             </button>
           </section>
 
@@ -185,7 +185,7 @@ export default function PricingPage() {
               <div className="text-4xl">🎙️</div>
               <h3 className="mt-3 text-base font-extrabold">Political Commentators</h3>
               <p className="mt-2 text-sm text-slate-600">
-                You speak publicly. One mistake damages credibility for months.
+                You deal with public claims. One mistake damages credibility for months.
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
@@ -225,7 +225,7 @@ export default function PricingPage() {
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-base font-extrabold">What happens when I hit my limit?</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                You can still analyze cached results and export Teaching Takes. You just can't pull fresh evidence until next month or you upgrade.
+                You can still analyze cached results and export Civic Breakdowns. You just can't pull fresh evidence until next month or you upgrade.
               </p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">

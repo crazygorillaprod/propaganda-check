@@ -138,7 +138,7 @@ export default function AnalyzeClient() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Analyze Content</h1>
         <p className="text-gray-600">
-          Evidence-first analysis for people who take democracy seriously
+          Evidence-first checks on political claims and power
         </p>
       </div>
 
@@ -209,15 +209,15 @@ export default function AnalyzeClient() {
               </h3>
               <p className="text-gray-700 mb-4">
                 {tier === 'free' 
-                  ? 'Preview a comprehensive Teaching Take with rebuttals, talk tracks, and action plans. (Preview only - Upgrade to unlock full access)'
-                  : 'Generate a comprehensive Teaching Take with rebuttals, talk tracks, and action plans.'}
+                  ? 'Preview a Civic Breakdown with a plain-language summary, receipts-based response, and an action plan you can share. (Preview only - Upgrade to unlock full access)'
+                  : 'Generate a Civic Breakdown with a plain-language summary, receipts-based response, and an action plan you can share.'}
               </p>
               <button
                 onClick={handleGenerateTeachingTake}
                 disabled={loadingTeachingTake}
                 className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium disabled:opacity-60"
               >
-                {loadingTeachingTake ? "Generating..." : tier === 'free' ? "Preview Teaching Take" : "Generate Teaching Take"}
+                {loadingTeachingTake ? "Generating..." : tier === 'free' ? "Preview Civic Breakdown" : "Generate Civic Breakdown"}
               </button>
             </div>
           )}

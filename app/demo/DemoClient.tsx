@@ -20,8 +20,8 @@ export default function DemoClient() {
         <div>
           <h1 style={{ fontSize: 34, fontWeight: 950, margin: 0, letterSpacing: -0.5 }}>Buyer Demo</h1>
           <p style={{ marginTop: 10, marginBottom: 0, color: '#4b5563', fontSize: 15, lineHeight: 1.6 }}>
-            A no-signup walkthrough of Propaganda Buster’s core features: evidence retrieval, verifiability scoring, claim-by-claim verdicts,
-            and Teaching Takes (exportable rebuttal scripts and talk tracks).
+            A no-signup walkthrough of Propaganda Buster’s core features: evidence retrieval, verifiability scoring, statement-by-statement verdicts,
+            and Civic Breakdowns (exportable summaries and receipts-based responses).
           </p>
         </div>
 
@@ -75,7 +75,7 @@ export default function DemoClient() {
       </section>
 
       <section style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 14, padding: 18 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 950, margin: 0 }}>Claim-by-claim results</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 950, margin: 0 }}>Statement-by-statement results</h2>
         <p style={{ marginTop: 8, marginBottom: 14, color: '#4b5563', fontSize: 13, lineHeight: 1.6 }}>
           This shows how the product breaks an input into checkable claims, retrieves evidence, then assigns a verdict with confidence.
         </p>
@@ -98,7 +98,7 @@ export default function DemoClient() {
               <div style={{ marginTop: 10, color: '#374151', fontSize: 13, lineHeight: 1.6 }}>{c.reasoning}</div>
 
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#111827', marginBottom: 8 }}>Evidence</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#111827', marginBottom: 8 }}>Sources</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   {c.evidence.map((e, i) => {
                     const badge = getStanceBadge(e.stance);
@@ -139,9 +139,9 @@ export default function DemoClient() {
       </section>
 
       <section style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 14, padding: 18, background: 'linear-gradient(to right, #faf5ff, #eff6ff)' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 950, margin: 0 }}>Teaching Take (exportable)</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 950, margin: 0 }}>Civic Breakdown (exportable)</h2>
         <p style={{ marginTop: 8, marginBottom: 0, color: '#4b5563', fontSize: 13, lineHeight: 1.6 }}>
-          This is the “ready-to-use” output for people who publish opinions publicly: rebuttal scripts, talk tracks, action plan, and exports.
+          This is the “ready-to-use” output for replying with facts: a plain-language summary, receipts-based response, action plan, and exports.
         </p>
         <div style={{ marginTop: 14 }}>
           <TeachingTakeDisplay teachingTake={demoTeachingTake} topic={demoTopic} isLocked={false} />

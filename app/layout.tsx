@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Propaganda Buster by BFMbreakdown",
-  description: "Evidence-first analysis for people who speak publicly.",
+  description: "Evidence-first checks on claims made by those in power — with clear sourcing and plain-language explanations.",
 };
 
 export default function RootLayout({

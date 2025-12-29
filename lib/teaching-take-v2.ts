@@ -312,34 +312,137 @@ export async function generateTeachingTake(
  * Creates a placeholder Teaching Take structure for Public Mode
  */
 function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
-  const verifiedClaims = input.claims.filter(c => 
-    c.verdict === 'Supported' || c.verdict === 'Likely supported'
+  type ConfirmationLevel = 'CONFIRMED_PRIMARY' | 'CORROBORATED' | 'VERIFIED_STRONG' | 'NEEDS_MORE_EVIDENCE';
+
+  const isFramingClaim = (c: Claim): boolean => c.type === 'FRAMING';
+
+  const getPrimarySourceLabel = (): string => {
+    const inputEvidence = input.claims.flatMap((c) => c.evidence.filter((e) => e.role === 'INPUT'));
+    const first = inputEvidence[0];
+    if (!first) return 'the provided article';
+    return first.publisher || first.domain || 'the provided article';
+  };
+
+  const isOfficialLike = (e: EvidenceItem): boolean => {
+    const d = (e.domain || e.publisher || '').toLowerCase();
+    if (d.endsWith('.gov') || d.endsWith('.mil') || d.endsWith('.edu')) return true;
+    if (d.endsWith('who.int') || d.endsWith('cdc.gov') || d.endsWith('nih.gov')) return true;
+    return (e.credibilityScore ?? e.credibility ?? 0) >= 0.9;
+  };
+
+  const getSupportingCorroboration = (c: Claim): EvidenceItem[] =>
+    (c.evidence || []).filter((e) => e.role !== 'INPUT' && e.stance === 'support');
+
+  const getConfirmationLevel = (c: Claim): { level: ConfirmationLevel; supportingDomains: string[]; primaryDomain?: string } => {
+    const primary = (c.evidence || []).find((e) => e.role === 'INPUT');
+    const supporting = getSupportingCorroboration(c);
+    const domains = Array.from(
+      new Set(
+        supporting
+          .map((e) => (e.domain || e.publisher || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    const hasOfficialSupport = supporting.some(isOfficialLike);
+
+    if (domains.length >= 2 || hasOfficialSupport) {
+      return { level: 'VERIFIED_STRONG', supportingDomains: domains, primaryDomain: primary?.domain || primary?.publisher };
+    }
+
+    if (domains.length >= 1) {
+      return { level: 'CORROBORATED', supportingDomains: domains, primaryDomain: primary?.domain || primary?.publisher };
+    }
+
+    if (primary) {
+      return { level: 'CONFIRMED_PRIMARY', supportingDomains: [], primaryDomain: primary.domain || primary.publisher };
+    }
+
+    return { level: 'NEEDS_MORE_EVIDENCE', supportingDomains: [], primaryDomain: undefined };
+  };
+
+  const checkableClaims = input.claims.filter((c) => !isFramingClaim(c));
+  const framingClaims = input.claims.filter((c) => isFramingClaim(c));
+
+  const classified = checkableClaims.map((c) => ({ claim: c, ...getConfirmationLevel(c) }));
+
+  const confirmedPrimary = classified.filter((x) => x.level === 'CONFIRMED_PRIMARY');
+  const corroborated = classified.filter((x) => x.level === 'CORROBORATED');
+  const verifiedStrong = classified.filter((x) => x.level === 'VERIFIED_STRONG');
+  const needsMoreEvidence = classified.filter((x) => x.level === 'NEEDS_MORE_EVIDENCE');
+
+  const confirmedCount = confirmedPrimary.length + corroborated.length + verifiedStrong.length;
+  const needsCount = needsMoreEvidence.length;
+
+  const topline = confirmedCount > 0
+    ? `Confirmed: ${confirmedCount}. Needs more evidence: ${needsCount}.`
+    : `No claims are confirmed from sources yet. Needs more evidence: ${needsCount}.`;
+
+  const primarySourceLabel = getPrimarySourceLabel();
+
+  const formatOutlets = (domains: string[]): string => {
+    const short = domains.slice(0, 3);
+    if (short.length === 0) return '';
+    return ` [${short.join('], [')}]`;
+  };
+
+  const whatWeKnow: string[] = [];
+
+  // 1) Confirmed in provided article (not corroborated)
+  for (const item of confirmedPrimary.slice(0, 2)) {
+    const label = item.primaryDomain || primarySourceLabel;
+    whatWeKnow.push(`Confirmed in the provided article (not yet corroborated): ${item.claim.text} [${label}]`);
+  }
+
+  // 2) Corroborated elsewhere
+  for (const item of [...corroborated, ...verifiedStrong].slice(0, Math.max(0, 4 - whatWeKnow.length))) {
+    const outletStr = formatOutlets(item.supportingDomains);
+    const prefix = item.level === 'VERIFIED_STRONG' ? 'Strongly verified' : 'Corroborated by other outlets';
+    whatWeKnow.push(`${prefix}: ${item.claim.text}${outletStr}`);
+  }
+
+  const whatIsUnclear: string[] = [];
+
+  for (const item of needsMoreEvidence.slice(0, 3)) {
+    whatIsUnclear.push(`We still need independent reporting or official records to confirm: ${item.claim.text}`);
+  }
+
+  if (needsMoreEvidence.length === 0 && confirmedCount === 0) {
+    whatIsUnclear.push('We need at least one credible source to confirm the key claims.');
+  }
+
+  // Build a clean, copy-paste rebuttal that matches certainty.
+  const bestConfirm = (
+    verifiedStrong[0] || corroborated[0] || confirmedPrimary[0] || needsMoreEvidence[0]
+  )?.claim;
+
+  const totalSupportingOutlets = Array.from(
+    new Set(
+      classified.flatMap((x) => x.supportingDomains)
+    )
   );
-  
-  const uncertainClaims = input.claims.filter(c =>
-    c.verdict === 'Mixed/unclear' || c.verdict === 'No corroboration found' || c.verdict === 'Not verified yet'
-  );
 
-  const topline = verifiedClaims.length > 0
-    ? `We can verify ${verifiedClaims.length} claim${verifiedClaims.length > 1 ? 's' : ''}. ${uncertainClaims.length} need more evidence.`
-    : `No claims were fully verified yet. ${uncertainClaims.length} need more evidence.`;
+  let whatToSayBack = '';
+  if (bestConfirm) {
+    if (verifiedStrong.length > 0) {
+      whatToSayBack = `I’m not running with this off one post. Here’s what we can confirm from sources: ${bestConfirm.text}. Multiple outlets back it up${totalSupportingOutlets.length ? ` (${totalSupportingOutlets.slice(0, 2).join(', ')})` : ''}.`;
+    } else if (corroborated.length > 0) {
+      whatToSayBack = `I’m not running with this off one article. Here’s what we can confirm so far: ${bestConfirm.text}. One other outlet mentions it, but we still need stronger proof like an official statement or more independent reporting before we treat it as settled.`;
+    } else if (confirmedPrimary.length > 0) {
+      whatToSayBack = `I’m not running with this off one article. So far, we can confirm this was said in the provided article: ${bestConfirm.text}. But we still need a direct official statement or a second solid outlet confirming the details. Until then, don’t spread extra claims.`;
+    } else {
+      whatToSayBack = `I’m not running with this without receipts. I haven’t seen credible sources confirming the main details yet. If we’re going to share it, we need a direct statement or solid independent reporting first.`;
+    }
+  } else {
+    whatToSayBack = `I’m not running with this without receipts. What’s the source? Let’s find credible reporting before we share it.`;
+  }
 
-  const whatWeKnow = verifiedClaims.slice(0, 4).map((claim) => {
-    const outlets = claim.evidence
-      .filter(e => e.role !== 'INPUT' && e.stance === 'support')
-      .map(e => e.publisher)
-      .slice(0, 3);
-    const outletStr = outlets.length > 0 ? ` [${outlets.join('], [')}]` : '';
-    return `${claim.text}${outletStr}`;
-  });
-
-  const whatIsUnclear = uncertainClaims.slice(0, 3).map(claim => 
-    `${claim.text} – ${claim.verdict.toLowerCase()}`
-  );
-
-  const whatToSayBack = verifiedClaims.length > 0
-    ? `I hear you. Let's focus on what's proven: ${verifiedClaims.slice(0, 2).map(c => c.text).join('. ')}. For the rest, we need better sources before running with it.`
-    : `I'm not seeing solid evidence for this yet. What sources are you using? Let's find something credible before we share it.`;
+  // Final cleanup: remove accidental double punctuation / spacing.
+  whatToSayBack = whatToSayBack
+    .replace(/\s+/g, ' ')
+    .replace(/\.\.+/g, '.')
+    .replace(/\s+\./g, '.')
+    .trim();
 
   const actionPlan = {
     today: [
@@ -359,8 +462,8 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
   const result: TeachingTake = {
     mode: input.mode as 'public' | 'professional',
     topline,
-    what_we_know: whatWeKnow.length > 0 ? whatWeKnow : ['No claims fully verified yet.'],
-    what_is_unclear: whatIsUnclear.length > 0 ? whatIsUnclear : ['All claims need verification.'],
+    what_we_know: whatWeKnow.length > 0 ? whatWeKnow : ['No claims are confirmed from sources yet.'],
+    what_is_unclear: whatIsUnclear.length > 0 ? whatIsUnclear : ['No major evidence gaps detected from the current set of claims.'],
     what_to_say_back: whatToSayBack,
     action_plan: actionPlan,
     
@@ -377,11 +480,19 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
     
     // Evidence gaps (synthesis layer)
     evidence_gaps: {
-      missing_evidence: uncertainClaims.map(c => `Source for: ${c.text}`),
-      what_would_prove: uncertainClaims.map(c => `Official records, credible reporting, or expert verification of: ${c.text}`),
-      what_would_disprove: uncertainClaims.map(c => `Contradicting evidence or debunking from credible sources for: ${c.text}`),
+      missing_evidence: needsMoreEvidence.map((x) => `Independent corroboration for: ${x.claim.text}`),
+      what_would_prove: needsMoreEvidence.map((x) => `Official records, direct statements, or independent reporting confirming: ${x.claim.text}`),
+      what_would_disprove: needsMoreEvidence.map((x) => `Credible reporting or primary evidence that contradicts: ${x.claim.text}`),
     },
   };
+
+  // Route FRAMING claims into the spin section (don’t treat as facts).
+  if (framingClaims.length > 0) {
+    result.how_this_gets_spun = [
+      ...framingClaims.slice(0, 4).map((c) => `Framing / characterization: ${c.text}`),
+      ...input.framingFlags.slice(0, 4).map((flag) => `Spin tactic: ${flag}`),
+    ];
+  }
 
   // Add extended sections for professional mode
   if (input.mode === 'professional') {
@@ -389,10 +500,14 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
       `Uses ${flag} as a persuasive technique`
     );
     result.deeper_rebuttal = `This content exhibits ${input.framingRiskLevel}-level framing characteristics. Observed tactics include ${input.framingFlags.slice(0, 3).join(', ')}. These patterns are commonly associated with persuasive messaging. Evidence-based analysis requires separating verified claims from unverified assertions and evaluating the framing techniques employed.`;
+
+    const confirmedClaims = [...verifiedStrong, ...corroborated, ...confirmedPrimary].map((x) => x.claim);
+    const needsClaims = needsMoreEvidence.map((x) => x.claim);
+
     result.rebuttal_script = {
       short: whatToSayBack,
-      medium: `${whatToSayBack} Based on available evidence: ${verifiedClaims.slice(0, 2).map(c => c.text).join('; ')}. Additional claims require further verification. Recommend cross-referencing with primary sources.`,
-      long: `Evidence assessment: Verified claims include ${verifiedClaims.map(c => c.text).join('. ')}. Unverified claims include ${uncertainClaims.slice(0, 2).map(c => c.text).join('. ')}. The framing employs tactics such as ${input.framingFlags.slice(0, 2).join(' and ')}, which may influence interpretation independent of factual content. Recommend focusing on verifiable evidence and identifying what additional sources would be needed to substantiate remaining claims.`,
+      medium: `${whatToSayBack} Based on available evidence: ${confirmedClaims.slice(0, 2).map(c => c.text).join('; ') || 'no claims are confirmed yet'}. Additional claims require further verification. Recommend cross-referencing with primary sources and independent corroboration.`,
+      long: `Evidence assessment: Confirmed items include ${confirmedClaims.map(c => c.text).join('. ') || 'none yet'}. Items needing more evidence include ${needsClaims.slice(0, 2).map(c => c.text).join('. ') || 'none flagged from the current set'}. The framing employs tactics such as ${input.framingFlags.slice(0, 2).join(' and ')}, which may influence interpretation independent of factual content. Recommend focusing on verifiable evidence and identifying what additional sources would be needed to substantiate remaining claims.`,
     };
     result.talk_tracks = [
       'Request: "Can you provide the original source for this claim?"',

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { AnalysisResult } from '@/lib/types';
 
 function computeCorroboratingSourceCount(result: AnalysisResult): number {
@@ -59,7 +60,7 @@ function getStatusPresentation(result: AnalysisResult): {
   if (state === 'RAN_WITH_RESULTS') {
     return {
       label: 'Evidence retrieved',
-      subtitle: 'Claims were checked against retrieved sources.',
+      subtitle: 'Public claims were checked against retrieved sources.',
       tone: 'neutral',
     };
   }
@@ -78,10 +79,26 @@ function getSummarySentence(score?: number): string {
   return 'Limited support from available sources.';
 }
 
-export function ResultTopline({ result }: { result: AnalysisResult }) {
+export function ResultTopline({ result, shareInput }: { result: AnalysisResult; shareInput?: string }) {
   const overall = result.overall_score ?? result.overallVerifiability;
   const status = getStatusPresentation(result);
   const sentence = getSummarySentence(overall?.score ?? undefined);
+  const [copied, setCopied] = useState(false);
+
+  const canShare = typeof window !== 'undefined' && typeof shareInput === 'string' && shareInput.trim().length >= 8;
+
+  const copyShareLink = async () => {
+    if (!canShare) return;
+    const q = shareInput!.trim();
+    const url = `${window.location.origin}/?q=${encodeURIComponent(q)}&share=1&autorun=1`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // no-op
+    }
+  };
 
   const badgeClass =
     status.tone === 'info'
@@ -95,7 +112,18 @@ export function ResultTopline({ result }: { result: AnalysisResult }) {
           <div className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${badgeClass}`}>
             Verification status: {status.label}
           </div>
-          {sentence ? <div className="text-xs sm:text-sm text-slate-600">{sentence}</div> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            {sentence ? <div className="text-xs sm:text-sm text-slate-600">{sentence}</div> : null}
+            {canShare ? (
+              <button
+                type="button"
+                onClick={copyShareLink}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 hover:bg-slate-50"
+              >
+                {copied ? 'Copied!' : 'Copy share link'}
+              </button>
+            ) : null}
+          </div>
         </div>
         {status.subtitle ? <div className="text-sm text-slate-600">{status.subtitle}</div> : null}
       </div>

@@ -12,9 +12,14 @@ export function Header() {
             <span className="text-xs sm:text-sm font-extrabold text-slate-500">by BFMbreakdown</span>
           </h1>
           <p className="mt-2 text-sm sm:text-base font-medium text-slate-700">
-            Evidence-first analysis for people who speak publicly.
+            Check the claims made by those in power.
           </p>
-          <p className="mt-1 text-xs sm:text-sm text-slate-500">Receipts before opinions. Think before you amplify.</p>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">
+            We provide evidence-first analysis, clear sourcing, and plain-language explanations so the public can understand what’s true, what’s unclear, and what’s spin — and respond responsibly.
+          </p>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">
+            Our goal is to strengthen democracy by promoting transparency, accountability, and informed public discussion, without telling people what to think.
+          </p>
         </div>
 
         <nav className="flex flex-wrap gap-2">

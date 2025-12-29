@@ -13,6 +13,14 @@ interface PublicModeDisplayProps {
 export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free' }: PublicModeDisplayProps) {
   const [showDetails, setShowDetails] = useState(false);
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const isFree = tier === 'free';
+
+  const shortWhatToSayBack = (() => {
+    const text = (teachingTake.what_to_say_back || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const sentences = text.split(/(?<=[.!?])\s+/g).filter(Boolean);
+    return sentences.slice(0, 4).join(' ').trim();
+  })();
 
   const copyToClipboard = async (text: string, section: string) => {
     try {
@@ -28,7 +36,7 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
     <div className="space-y-4">
       {/* Topline */}
       <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6">
-        <div className="text-sm font-extrabold text-blue-900">What we can prove</div>
+        <div className="text-sm font-extrabold text-blue-900">What we can confirm</div>
         <div className="mt-2 text-base font-semibold leading-snug text-blue-900">
           {teachingTake.topline}
         </div>
@@ -36,8 +44,8 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
 
       {/* What We Know */}
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
-        <div className="text-sm font-extrabold text-slate-900">What we know</div>
-        <p className="mt-1 text-xs text-slate-600">Backed by sources</p>
+        <div className="text-sm font-extrabold text-slate-900">What the sources say</div>
+        <p className="mt-1 text-xs text-slate-600">Confirmed vs. corroborated</p>
         <ul className="mt-3 space-y-2">
           {teachingTake.what_we_know.map((item, idx) => (
             <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
@@ -71,63 +79,66 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
           </div>
           <button
             type="button"
-            onClick={() => copyToClipboard(teachingTake.what_to_say_back, 'rebuttal')}
+            onClick={() => copyToClipboard(shortWhatToSayBack || teachingTake.what_to_say_back, 'rebuttal')}
             className="rounded-lg border border-violet-300 bg-white px-3 py-2 text-xs font-semibold text-violet-900 hover:bg-violet-100"
           >
             {copiedSection === 'rebuttal' ? 'Copied!' : 'Copy'}
           </button>
         </div>
         <div className="mt-3 text-sm leading-relaxed text-violet-900">
-          {teachingTake.what_to_say_back}
+          {shortWhatToSayBack || teachingTake.what_to_say_back}
         </div>
       </section>
 
-      {/* Action Plan */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
-        <div className="text-sm font-extrabold text-slate-900">What to do next</div>
-        <p className="mt-1 text-xs text-slate-600">Tiny, concrete, legal</p>
+      {/* Action Plan (paid only) */}
+      {!isFree ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+          <div className="text-sm font-extrabold text-slate-900">What to do next</div>
+          <p className="mt-1 text-xs text-slate-600">Tiny, concrete, legal</p>
 
-        <div className="mt-4 space-y-4">
-          <div>
-            <div className="text-xs font-semibold text-slate-700">Today</div>
-            <ul className="mt-2 space-y-1">
-              {teachingTake.action_plan.today.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="mt-0.5">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <div className="mt-4 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Today</div>
+              <ul className="mt-2 space-y-1">
+                {teachingTake.action_plan.today.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-0.5">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          <div>
-            <div className="text-xs font-semibold text-slate-700">This week</div>
-            <ul className="mt-2 space-y-1">
-              {teachingTake.action_plan.this_week.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="mt-0.5">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            <div>
+              <div className="text-xs font-semibold text-slate-700">This week</div>
+              <ul className="mt-2 space-y-1">
+                {teachingTake.action_plan.this_week.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-0.5">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-          <div>
-            <div className="text-xs font-semibold text-slate-700">Ongoing</div>
-            <ul className="mt-2 space-y-1">
-              {teachingTake.action_plan.ongoing.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
-                  <span className="mt-0.5">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+            <div>
+              <div className="text-xs font-semibold text-slate-700">Ongoing</div>
+              <ul className="mt-2 space-y-1">
+                {teachingTake.action_plan.ongoing.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                    <span className="mt-0.5">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {/* Show Details Toggle */}
-      {(teachingTake.how_this_gets_spun || teachingTake.deeper_rebuttal) && (
+      {/* Spin awareness (labels only for free; deeper analysis paid) */}
+      {(teachingTake.how_this_gets_spun || (!isFree && teachingTake.deeper_rebuttal)) && (
         <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
           <button
             type="button"
@@ -147,7 +158,7 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
                 <div>
                   <div className="text-xs font-semibold text-slate-700">How this gets spun</div>
                   <ul className="mt-2 space-y-1">
-                    {teachingTake.how_this_gets_spun.map((item, idx) => (
+                      {(isFree ? teachingTake.how_this_gets_spun.slice(0, 4) : teachingTake.how_this_gets_spun).map((item, idx) => (
                       <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
                         <span className="mt-0.5">•</span>
                         <span>{item}</span>
@@ -157,7 +168,7 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
                 </div>
               )}
 
-              {teachingTake.deeper_rebuttal && (
+              {!isFree && teachingTake.deeper_rebuttal && (
                 <div>
                   <div className="text-xs font-semibold text-slate-700">Deeper analysis</div>
                   <div className="mt-2 text-sm leading-relaxed text-slate-700">
@@ -178,7 +189,7 @@ export function PublicModeDisplay({ teachingTake, topic, onUpgrade, tier = 'free
             Upgrade to Pro ($25/month) for:
           </p>
           <ul className="mt-3 space-y-1 text-sm text-slate-700">
-            <li>• Full Teaching Takes with extended rebuttals</li>
+            <li>• Full Civic Breakdowns with extended responses</li>
             <li>• PDF & text exports</li>
             <li>• Social media snippets</li>
             <li>• 50 fact checks/month (vs 10)</li>

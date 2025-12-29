@@ -1,4 +1,4 @@
-export type ClaimType = 'QUOTE' | 'EVENT' | 'SCHEDULE' | 'POLICY' | 'OTHER';
+export type ClaimType = 'QUOTE' | 'EVENT' | 'SCHEDULE' | 'POLICY' | 'FRAMING' | 'OTHER';
 
 export type AttributionType = 'DIRECT_QUOTE' | 'REPORTED_SPEECH' | 'OFFICIAL_STATEMENT' | 'UNATTRIBUTED';
 
@@ -107,6 +107,13 @@ export type AnalysisResult = {
   rebuttal?: {
     short: string;
     medium?: string;
+  };
+  _meta?: {
+    cached?: boolean;
+    cost?: number;
+    cache_saved?: number;
+    processing_time_ms?: number;
+    remaining_checks?: number;
   };
   debug?: unknown;
 };
