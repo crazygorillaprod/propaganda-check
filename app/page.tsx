@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisResult, TeachingTake, UsageTier } from "@/lib/types";
 import { Header } from "@/components/Header";
 import { AnalyzeForm } from "@/components/AnalyzeForm";
 import { ResultTopline } from "@/components/ResultTopline";
 import { AnalysisTabs } from "@/components/AnalysisTabs";
+import { Footer } from "@/components/Footer";
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -20,6 +21,14 @@ export default function Home() {
   const [showEmailGate, setShowEmailGate] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [devVerifyLink, setDevVerifyLink] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const lastActiveElementRef = useRef<HTMLElement | null>(null);
+
+  const emailGateTitleId = useMemo(() => "email-gate-title", []);
+  const emailGateDescriptionId = useMemo(() => "email-gate-description", []);
 
   // Check for stored email/tier on mount
   useEffect(() => {
@@ -48,6 +57,60 @@ export default function Home() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!showEmailGate) return;
+
+    lastActiveElementRef.current = document.activeElement as HTMLElement | null;
+
+    const t = window.setTimeout(() => {
+      emailInputRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(t);
+  }, [showEmailGate]);
+
+  function closeEmailGate() {
+    setShowEmailGate(false);
+    setEmailError("");
+    setEmailSuccess(null);
+    setDevVerifyLink(null);
+    const el = lastActiveElementRef.current;
+    if (el && typeof el.focus === "function") {
+      window.setTimeout(() => el.focus(), 0);
+    }
+  }
+
+  function trapFocus(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeEmailGate();
+      return;
+    }
+
+    if (e.key !== "Tab") return;
+    if (!dialogRef.current) return;
+
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((n) => !n.hasAttribute("disabled") && n.tabIndex !== -1);
+
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+
+    if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    }
+  }
+
   function extractErrorFromJson(value: unknown): string | undefined {
     if (!value || typeof value !== "object") return undefined;
     const obj = value as Record<string, unknown>;
@@ -65,6 +128,8 @@ export default function Home() {
 
   function handleEmailSubmit() {
     setEmailError("");
+    setEmailSuccess(null);
+    setDevVerifyLink(null);
 
     if (!emailInput.trim()) {
       setEmailError("Please enter your email address");
@@ -89,19 +154,13 @@ export default function Home() {
           // Store email locally
           localStorage.setItem("user_email", emailInput);
           setUserEmail(emailInput);
-          setShowEmailGate(false);
 
-          // Show verification message
           if (process.env.NODE_ENV === "development" && data.verificationToken) {
             const verifyLink = `${window.location.origin}/verify?token=${data.verificationToken}`;
-            // eslint-disable-next-line no-console
-            console.log("🔗 Verification link:", verifyLink);
-            alert(
-              "Check console for verification link (in production, this would be emailed)",
-            );
-          } else {
-            alert("Welcome! Check your email for verification link.");
+            setDevVerifyLink(verifyLink);
           }
+
+          setEmailSuccess("Check your email for a verification link.");
         } else {
           setEmailError(data.error || "Signup failed");
         }
@@ -182,22 +241,51 @@ export default function Home() {
       {/* Email Gate Modal */}
       {showEmailGate ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={emailGateTitleId}
+            aria-describedby={emailGateDescriptionId}
+            onKeyDown={trapFocus}
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="sr-only" id={emailGateTitleId}>
+                Start with 10 free checks/month
+              </div>
+              <button
+                type="button"
+                onClick={closeEmailGate}
+                className="ml-auto rounded-lg p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
             <div className="text-center">
               <div className="text-4xl">Receipts before opinions</div>
-              <h2 className="mt-3 text-xl font-extrabold tracking-tight text-slate-900">
+              <h2
+                className="mt-3 text-xl font-extrabold tracking-tight text-slate-900"
+                id={emailGateTitleId}
+              >
                 Start with 10 free checks/month
               </h2>
-              <p className="mt-2 text-sm text-slate-600">No credit card required.</p>
+              <p className="mt-2 text-sm text-slate-600" id={emailGateDescriptionId}>
+                No credit card required.
+              </p>
             </div>
 
             <div className="mt-5">
               <input
+                ref={emailInputRef}
                 type="email"
                 value={emailInput}
                 onChange={(e) => setEmailInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleEmailSubmit()}
                 placeholder="you@company.com"
+                disabled={!!emailSuccess}
                 className={`w-full rounded-lg border bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 ${
                   emailError ? "border-red-300" : "border-slate-200"
                 }`}
@@ -207,16 +295,58 @@ export default function Home() {
                   {emailError}
                 </p>
               ) : null}
+              {emailSuccess ? (
+                <p className="mt-2 text-xs font-semibold text-emerald-700">
+                  {emailSuccess}
+                </p>
+              ) : null}
             </div>
 
             <button
               type="button"
               onClick={handleEmailSubmit}
-              disabled={loading}
+              disabled={loading || !!emailSuccess}
               className="mt-3 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Sending…" : "Start analyzing"}
             </button>
+
+            {devVerifyLink ? (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="text-xs font-extrabold text-amber-900">Dev mode</div>
+                <p className="mt-1 text-xs text-amber-900">
+                  Verification link (normally emailed):
+                </p>
+                <div className="mt-2 break-all rounded-lg border border-amber-200 bg-white p-2 text-xs text-slate-900">
+                  {devVerifyLink}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a
+                    href={devVerifyLink}
+                    className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                  >
+                    Open verify page
+                  </a>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                    onClick={() => navigator.clipboard.writeText(devVerifyLink)}
+                  >
+                    Copy link
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {emailSuccess ? (
+              <button
+                type="button"
+                onClick={closeEmailGate}
+                className="mt-3 w-full rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-200"
+              >
+                Continue
+              </button>
+            ) : null}
 
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-700">
@@ -287,6 +417,8 @@ export default function Home() {
           </div>
         ) : null}
       </div>
+
+      <Footer />
     </main>
   );
 }

@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { Header } from '@/components/Header';
+import { Footer } from '@/components/Footer';
 
 export default function PricingPage() {
   const [banner, setBanner] = useState<{ type: 'success' | 'cancel'; message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -36,6 +38,8 @@ export default function PricingPage() {
       return;
     }
 
+    setError(null);
+
     const res = await fetch('/api/billing/create-checkout-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,7 +49,7 @@ export default function PricingPage() {
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       const msg = (data && (data.error || data.message)) || 'Could not start checkout';
-      alert(msg);
+      setError(msg);
       return;
     }
 
@@ -68,6 +72,12 @@ export default function PricingPage() {
             }
           >
             {banner.message}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-900">
+            {error}
           </div>
         ) : null}
 
@@ -233,6 +243,8 @@ export default function PricingPage() {
           </div>
         </section>
       </div>
+
+      <Footer />
     </main>
   );
 }
