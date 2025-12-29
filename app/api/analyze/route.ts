@@ -488,7 +488,8 @@ export async function POST(req: Request) {
       // Use new search client to retrieve evidence
       const evidenceResults = await retrieve_evidence_for_claim(
         claim.text,
-        inputDomain ? [inputDomain] : []
+        inputDomain ? [inputDomain] : [],
+        claim.type // Pass claim type for smarter query building
       );
       
       // Convert SearchResult to the format expected by scoreEvidence

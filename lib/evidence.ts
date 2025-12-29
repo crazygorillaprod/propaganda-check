@@ -15,6 +15,86 @@ const LOW_CREDIBILITY_INDICATORS = [
   'facebook.com', 'instagram.com', 'tiktok.com', 'reddit.com'
 ];
 
+/**
+ * Extract entities (names, organizations, specific terms) from claim
+ */
+function extractEntities(claim: string): string[] {
+  const entities: string[] = [];
+  
+  // Quoted phrases (exact matches)
+  const quotedMatches = claim.match(/"([^"]+)"/g);
+  if (quotedMatches) {
+    quotedMatches.forEach(q => entities.push(q.replace(/"/g, '').toLowerCase()));
+  }
+  
+  // Capitalized phrases (likely names/orgs)
+  const capitalizedMatches = claim.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g);
+  if (capitalizedMatches) {
+    capitalizedMatches.forEach(cap => entities.push(cap.toLowerCase()));
+  }
+  
+  // Acronyms (2+ caps)
+  const acronyms = claim.match(/\b[A-Z]{2,}\b/g);
+  if (acronyms) {
+    acronyms.forEach(acr => entities.push(acr.toLowerCase()));
+  }
+  
+  return entities;
+}
+
+/**
+ * Extract action keywords from claim
+ */
+function extractActionKeywords(claim: string): string[] {
+  const actionVerbs = [
+    'continue', 'host', 'announce', 'said', 'stated', 'confirmed', 
+    'denied', 'plan', 'plans', 'will', 'launched', 'started', 
+    'ended', 'canceled', 'postponed', 'implemented', 'created',
+    'debate', 'debates', 'event', 'nationwide', 'campus'
+  ];
+  
+  const claimLower = claim.toLowerCase();
+  return actionVerbs.filter(verb => claimLower.includes(verb));
+}
+
+/**
+ * Relevance gate: check if evidence actually relates to the claim
+ * Returns relevance score 0-1, where < 0.4 should be rejected
+ */
+export function calculateRelevanceScore(claim: string, evidenceTitle: string, evidenceSnippet: string): number {
+  const entities = extractEntities(claim);
+  const actionKeywords = extractActionKeywords(claim);
+  const evidenceText = `${evidenceTitle} ${evidenceSnippet}`.toLowerCase();
+  
+  // Count entity matches
+  const matchingEntities = entities.filter(entity => evidenceText.includes(entity));
+  const entityMatchRatio = entities.length > 0 ? matchingEntities.length / entities.length : 0;
+  
+  // Count action keyword matches
+  const matchingKeywords = actionKeywords.filter(kw => evidenceText.includes(kw));
+  const keywordMatchRatio = actionKeywords.length > 0 ? matchingKeywords.length / actionKeywords.length : 0;
+  
+  // GATE RULE: Must have at least 1 entity match AND 1 keyword match (if both exist)
+  if (entities.length > 0 && matchingEntities.length === 0) {
+    return 0.1; // No entity match = irrelevant
+  }
+  
+  if (actionKeywords.length > 0 && matchingKeywords.length === 0) {
+    return 0.2; // No action keyword match = likely irrelevant
+  }
+  
+  // Calculate combined relevance score
+  // Weight entities more heavily (70/30) since they're more specific
+  const relevanceScore = (entityMatchRatio * 0.7) + (keywordMatchRatio * 0.3);
+  
+  // Boost score if we have strong matches
+  if (matchingEntities.length >= 2 && matchingKeywords.length >= 1) {
+    return Math.min(relevanceScore * 1.2, 1.0);
+  }
+  
+  return relevanceScore;
+}
+
 export function assessSourceCredibility(domain: string): number {
   const d = domain.toLowerCase();
 
@@ -56,20 +136,25 @@ export async function scoreEvidence(
   // Calculate attribution boost if present
   const attributionBoost = attributionType ? calculate_attribution_boost(attributionType) : 0;
   
-  return sources.map(source => {
+  const scoredItems: EvidenceItem[] = [];
+  
+  for (const source of sources) {
     const domain = new URL(source.url).hostname.replace(/^www\./, '');
     const cleanSnippet = stripHtml(source.snippet || '');
     
-    // Simple relevance heuristic: check if claim keywords appear in title/snippet
-    const claimKeywords = claim.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    const sourceText = `${source.title} ${cleanSnippet}`.toLowerCase();
-    const matchingKeywords = claimKeywords.filter(kw => sourceText.includes(kw));
-    const relevanceScore = Math.min(matchingKeywords.length / Math.max(claimKeywords.length, 1), 1);
+    // NEW: Apply relevance gate
+    const relevanceScore = calculateRelevanceScore(claim, source.title, cleanSnippet);
+    
+    // REJECT if relevance is too low (< 0.4)
+    if (relevanceScore < 0.4) {
+      console.log(`[relevance_gate:rejected] ${source.title.substring(0, 60)}... - score: ${relevanceScore.toFixed(2)}`);
+      continue; // Skip this source
+    }
     
     const baselineReputation = assessSourceCredibility(domain);
 
-    // Match quality: how directly the source text overlaps the claim keywords.
-    const matchQuality = Math.max(0, Math.min(1, relevanceScore));
+    // Match quality now uses the stricter relevance score
+    const matchQuality = relevanceScore;
 
     // Total credibility = baseline reputation + match quality (weighted)
     const credibility = Math.max(0.05, Math.min(1, baselineReputation * 0.75 + matchQuality * 0.25));
@@ -78,7 +163,7 @@ export async function scoreEvidence(
     const baseConfidence = matchQuality * 0.7 + baselineReputation * 0.3;
     const confidence = Math.min(Math.max(baseConfidence + attributionBoost, 0.2), 1.0);
     
-    return {
+    scoredItems.push({
       role: 'CORROBORATION',
       url: source.url,
       title: source.title,
@@ -96,8 +181,10 @@ export async function scoreEvidence(
       credibilityScore: baselineReputation,
       stanceTowardsClaim: 'unclear',
       keyQuote: extractKeyQuote(cleanSnippet, claim),
-    };
-  });
+    });
+  }
+  
+  return scoredItems;
 }
 
 function parsePublishDate(ageString: string): string | undefined {

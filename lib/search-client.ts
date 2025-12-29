@@ -170,41 +170,96 @@ export async function search(
 
 /**
  * Build multiple search queries for a claim to maximize evidence retrieval
+ * Now claim-type aware for better precision
  */
-export function build_queries_for_claim(claim: string): string[] {
+export function build_queries_for_claim(claim: string, claimType?: string): string[] {
   const queries: string[] = [];
 
-  // 1. Direct claim search
-  queries.push(claim);
-
-  // 2. Extract key entities/numbers for focused search
-  const numbers = claim.match(/\d+(?:\.\d+)?%?/g);
+  // Extract key components
+  const quotedPhrases = claim.match(/"([^"]+)"/g);
   const properNouns = claim.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g);
+  const acronyms = claim.match(/\b[A-Z]{2,}\b/g);
+  const numbers = claim.match(/\d+(?:\.\d+)?%?/g);
+  
+  // QUOTE or ORGANIZATION-ANNOUNCEMENT claims (like TPUSA example)
+  if (claimType === 'QUOTE' || claim.includes('"') || claim.toLowerCase().includes('said') || claim.toLowerCase().includes('announced')) {
+    // Query 1: Exact quoted phrase + key entity
+    if (quotedPhrases && (properNouns || acronyms)) {
+      const entity = acronyms?.[0] || properNouns?.[0];
+      queries.push(`${quotedPhrases[0]} ${entity}`);
+    }
+    
+    // Query 2: Entity + action keywords (no .gov/.edu needed for org announcements)
+    if (properNouns || acronyms) {
+      const entities = [...(acronyms || []), ...(properNouns?.slice(0, 2) || [])];
+      const actionWords = extractActionKeywords(claim);
+      queries.push(`${entities.join(' ')} ${actionWords.join(' ')}`);
+    }
+    
+    // Query 3: Full claim without generic words
+    const cleanedClaim = claim.replace(/\b(the|a|an|is|was|will|be|to|of|in|on|at|by)\b/gi, ' ').trim();
+    queries.push(cleanedClaim);
+  }
+  // EVENT or SCHEDULE claims (specific dates/locations)
+  else if (claimType === 'EVENT' || claimType === 'SCHEDULE') {
+    // Query 1: Direct claim
+    queries.push(claim);
+    
+    // Query 2: Entity + date + event
+    if (properNouns && numbers) {
+      queries.push(`${properNouns[0]} ${numbers[0]} event`);
+    }
+    
+    // Query 3: Add site:official domains if it's a government/official event
+    if (claim.match(/\b(council|mayor|governor|president|official)\b/i)) {
+      queries.push(`${claim} site:.gov`);
+    }
+  }
+  // POLICY claims (need authoritative sources)
+  else if (claimType === 'POLICY') {
+    queries.push(claim);
+    
+    // Prioritize .gov/.edu for policy claims
+    if (properNouns) {
+      queries.push(`${claim} site:.gov OR site:.edu`);
+    }
+    
+    // Add fact-checking sites
+    queries.push(`${claim} site:politifact.com OR site:factcheck.org`);
+  }
+  // OTHER or default
+  else {
+    // Query 1: Direct claim
+    queries.push(claim);
 
-  if (numbers && numbers.length > 0) {
-    // Search for specific numbers/stats
-    queries.push(`${numbers[0]} ${claim.slice(0, 50)}`);
+    // Query 2: Key entities + numbers
+    if (numbers && (properNouns || acronyms)) {
+      const entities = [...(acronyms || []), ...(properNouns?.slice(0, 2) || [])];
+      queries.push(`${entities.join(' ')} ${numbers[0]}`);
+    }
+
+    // Query 3: Quoted phrases
+    if (quotedPhrases) {
+      queries.push(quotedPhrases[0]);
+    }
   }
 
-  if (properNouns && properNouns.length > 0) {
-    // Search with proper nouns (names, places, organizations)
-    const entityQuery = properNouns.slice(0, 3).join(" ");
-    queries.push(entityQuery);
-  }
+  // Remove duplicates, empty strings, and limit to 3
+  return Array.from(new Set(queries.filter(q => q && q.trim().length > 5))).slice(0, 3);
+}
 
-  // 3. Quoted phrase search for exact wording
-  const importantPhrases = claim.match(/"[^"]+"/g);
-  if (importantPhrases) {
-    queries.push(importantPhrases[0]);
-  }
-
-  // 4. Add context keywords
-  if (claim.includes("said") || claim.includes("announced")) {
-    queries.push(claim.replace(/\s+said\s+/i, " announced "));
-  }
-
-  // Remove duplicates and limit
-  return Array.from(new Set(queries)).slice(0, 3);
+/**
+ * Helper to extract action keywords (shared with evidence.ts logic)
+ */
+function extractActionKeywords(claim: string): string[] {
+  const actionVerbs = [
+    'continue', 'host', 'announce', 'said', 'stated', 'confirmed', 
+    'denied', 'plan', 'plans', 'will', 'launched', 'started', 
+    'ended', 'canceled', 'postponed', 'debate', 'debates', 'event'
+  ];
+  
+  const claimLower = claim.toLowerCase();
+  return actionVerbs.filter(verb => claimLower.includes(verb));
 }
 
 /**
@@ -293,7 +348,8 @@ export function is_bad_citation(url: string): boolean {
  */
 export async function retrieve_evidence_for_claim(
   claim: string,
-  excluded_domains: string[] = []
+  excluded_domains: string[] = [],
+  claimType?: string
 ): Promise<SearchResult[]> {
   const client = getSearchClient();
   const shouldLog = process.env.NODE_ENV !== 'test';
@@ -314,8 +370,8 @@ export async function retrieve_evidence_for_claim(
     return out;
   };
 
-  // Build multiple queries
-  const queries = build_queries_for_claim(claim);
+  // Build multiple queries with claim type awareness
+  const queries = build_queries_for_claim(claim, claimType);
   
   // Search with each query
   const allResults: SearchResult[] = [];
