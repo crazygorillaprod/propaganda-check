@@ -83,7 +83,7 @@ export function SummaryTab({
   showTeachingTake: boolean;
   onGenerateTeachingTake: () => Promise<void>;
 }) {
-  const [displayMode, setDisplayMode] = useState<'public' | 'creator'>('public');
+  const [displayMode, setDisplayMode] = useState<'public' | 'professional'>('public');
   const overall = result.overall_score ?? result.overallVerifiability;
   const retrievalState = getRetrievalState(result);
   const corroboratingSourceCount = computeCorroboratingSourceCount(result);
@@ -185,18 +185,20 @@ export function SummaryTab({
                       : 'flex-1 rounded-md px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100'
                   }
                 >
-                  Public Mode (Simple)
+                  <div className="text-xs font-semibold">Public</div>
+                  <div className="mt-0.5 text-[10px] font-normal opacity-80">Fast-scan, 6th grade</div>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDisplayMode('creator')}
+                  onClick={() => setDisplayMode('professional')}
                   className={
-                    displayMode === 'creator'
+                    displayMode === 'professional'
                       ? 'flex-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white'
                       : 'flex-1 rounded-md px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100'
                   }
                 >
-                  Creator Mode (Detailed)
+                  <div className="text-xs font-semibold">Professional</div>
+                  <div className="mt-0.5 text-[10px] font-normal opacity-80">Journalist-safe, neutral</div>
                 </button>
               </div>
             )}
@@ -204,9 +206,9 @@ export function SummaryTab({
             {/* Always show Public Mode for free tier, or based on toggle for paid */}
             {tier === 'free' || displayMode === 'public' ? (
               <PublicModeDisplay teachingTake={teachingTake} topic={input} onUpgrade={handleUpgrade} tier={tier} />
-            ) : (
+            ) : displayMode === 'professional' ? (
               <TeachingTakeDisplay teachingTake={teachingTake} topic={input} isLocked={false} />
-            )}
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -3,14 +3,14 @@
  * Defines audience, tone, and output structure
  */
 
-export type WritingMode = 'public' | 'creator' | 'journalist' | 'civic';
+export type WritingMode = 'public' | 'professional' | 'journalist' | 'civic';
 
 export interface WritingProfile {
   mode: WritingMode;
   audienceLevel: '6th_grade' | 'college' | 'professional';
   tone: 'calm_firm' | 'neutral_reporter' | 'educator' | 'organizer';
   stance: 'pro_democracy_pro_rights' | 'strictly_neutral' | 'advocacy_focused';
-  target: 'general_public' | 'content_creators' | 'newsrooms' | 'organizers';
+  target: 'general_public' | 'professionals' | 'newsrooms' | 'organizers';
   maxSentenceLength: number;
   maxParagraphLength: number;
   useJargon: boolean;
@@ -27,15 +27,15 @@ export const WRITING_PROFILES: Record<WritingMode, WritingProfile> = {
     maxParagraphLength: 4,
     useJargon: false,
   },
-  creator: {
-    mode: 'creator',
-    audienceLevel: 'college',
-    tone: 'educator',
-    stance: 'pro_democracy_pro_rights',
-    target: 'content_creators',
-    maxSentenceLength: 20,
-    maxParagraphLength: 6,
-    useJargon: false,
+  professional: {
+    mode: 'professional',
+    audienceLevel: 'professional',
+    tone: 'neutral_reporter',
+    stance: 'strictly_neutral',
+    target: 'professionals',
+    maxSentenceLength: 24,
+    maxParagraphLength: 8,
+    useJargon: true,
   },
   journalist: {
     mode: 'journalist',

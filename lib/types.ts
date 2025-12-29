@@ -111,11 +111,33 @@ export type AnalysisResult = {
   debug?: unknown;
 };
 
+/**
+ * Narrative and propaganda analysis (Layer 2)
+ * How people are being manipulated - tactics and effects
+ */
+export interface NarrativeAnalysis {
+  dominant_frame: string;        // The primary framing used
+  tactics_detected: string[];    // Propaganda tactics identified
+  emotional_triggers: string[];  // Fear, anger, urgency, etc.
+  repeated_phrases: string[];    // Key phrases repeated across content
+  likely_effects: string[];      // What this framing encourages people to believe/do
+}
+
+/**
+ * Evidence Gap analysis (Layer 3 - Synthesis)
+ * What's missing, what would settle it
+ */
+export interface EvidenceGap {
+  missing_evidence: string[];    // What evidence is not provided
+  what_would_prove: string[];    // What evidence would prove the claim
+  what_would_disprove: string[]; // What evidence would disprove the claim
+}
+
 export type TeachingTake = {
   // Public Mode structure (default)
-  mode?: 'public' | 'creator';
+  mode?: 'public' | 'professional';
   topline: string;                        // 1 sentence summary
-  what_we_know: string[];                 // 2-4 bullets max (public), more in creator
+  what_we_know: string[];                 // 2-4 bullets max (public), more in professional
   what_is_unclear: string[];              // 1-3 bullets
   what_to_say_back: string;               // Short comment-ready rebuttal (public mode)
   action_plan: {
@@ -124,7 +146,11 @@ export type TeachingTake = {
     ongoing: string[];                    // 2 bullets
   };
   
-  // Creator/detailed sections (collapsed by default in public mode)
+  // Layer 2: Narrative analysis (all modes)
+  narrative_analysis?: NarrativeAnalysis;
+  evidence_gaps?: EvidenceGap;
+  
+  // Professional Mode sections (journalist-safe, neutral tone)
   how_this_gets_spun?: string[];          // framing tactics
   deeper_rebuttal?: string;               // longer analysis
   rebuttal_script?: {                     // legacy + extended versions

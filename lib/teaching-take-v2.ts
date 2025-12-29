@@ -123,8 +123,10 @@ Name the tactic. Name the impact. Demand the receipt.
 Democracy needs proof. Not vibes. Not rumors.`;
   }
 
-  // Creator Mode uses the full detailed prompt
-  return `You are generating a "Teaching Take" for a misinformation defense tool in CREATOR MODE.
+  // Professional Mode: journalist-safe, neutral, evidence-first
+  return `You are generating a "Teaching Take" for an investigative research tool in PROFESSIONAL MODE.
+
+This mode is for journalists, political professionals, and investigators.
 
 Topic: ${topic}
 
@@ -135,39 +137,62 @@ ${evidenceContext ? `Evidence Clusters:\n${evidenceContext}\n` : ''}
 Framing Risk Level: ${framingRiskLevel}
 Framing Flags: ${framingFlags.join(', ')}
 
-CRITICAL REQUIREMENTS:
-1. Separate VERIFIED FACTS vs UNCERTAINTIES vs INTERPRETATION
-2. Do NOT call anyone racist/undemocratic/evil unless the evidence explicitly proves that claim
-3. Focus on BEHAVIORS/TACTICS: framing, scapegoating, insinuation, false certainty
-4. Write at accessible level: plain language, calm but firm
-5. Cite sources by outlet name in brackets: [AP], [Reuters], [BBC]
-6. Do NOT invent sources, dates, or quotes - only use what's provided above
+CRITICAL SAFETY RULES:
+1. NEVER say "this person is racist/evil/undemocratic" - instead describe PATTERNS and EFFECTS
+2. Use "This framing..." NOT "They intend..."
+3. Use "This language has historically been used to..." NOT "This is designed to..."
+4. Describe TACTICS and IMPACTS, not motives or character
+5. Stay strictly neutral - present analysis, not advocacy
+6. Cite sources explicitly: [AP], [Reuters], [BBC]
+7. Separate: Facts → Gaps → Analysis → What would settle it
+
+LANGUAGE SAFETY EXAMPLES:
+✗ BAD: "This politician is racist"
+✓ GOOD: "This framing targets [group] and has historically been associated with [pattern]"
+
+✗ BAD: "They're trying to divide Americans"
+✓ GOOD: "This narrative emphasizes group conflict and may increase polarization"
+
+✗ BAD: "This is propaganda designed to manipulate voters"
+✓ GOOD: "This content uses emotional appeals and selective framing common in persuasive messaging"
 
 OUTPUT STRUCTURE (JSON format):
 {
-  "mode": "creator",
-  "topline": "One sentence summary",
-  "what_we_know": ["Detailed bullets with sources", "More comprehensive than public mode"],
-  "what_is_unclear": ["Gaps and unknowns"],
-  "what_to_say_back": "Quick response version",
+  "mode": "professional",
+  "topline": "One sentence summary - strictly factual",
+  "what_we_know": ["Verified facts with [Source]", "More detail than public mode", "Include dates, specifics"],
+  "what_is_unclear": ["Evidence gaps with specificity", "What's missing to verify"],
+  "what_to_say_back": "Neutral, fact-based response",
   "action_plan": {
-    "today": ["2 actions"],
-    "this_week": ["2 actions"],
-    "ongoing": ["2 actions"]
+    "today": ["Verify key claims", "Document sources"],
+    "this_week": ["Follow up on gaps", "Cross-reference"],
+    "ongoing": ["Track developments", "Update records"]
   },
-  "how_this_gets_spun": ["Detailed framing analysis"],
-  "deeper_rebuttal": "Extended analysis of tactics and impacts",
+  "narrative_analysis": {
+    "dominant_frame": "Describe the primary framing used",
+    "tactics_detected": ["Specific propaganda tactics - name them", "E.g., 'emotional appeal', 'false certainty'"],
+    "emotional_triggers": ["Fear", "Anger", "Urgency", etc.],
+    "repeated_phrases": ["Key phrases used multiple times"],
+    "likely_effects": ["This framing may lead to...", "Describe patterns, not intent"]
+  },
+  "evidence_gaps": {
+    "missing_evidence": ["What evidence is not provided"],
+    "what_would_prove": ["What evidence would prove this claim"],
+    "what_would_disprove": ["What evidence would disprove this claim"]
+  },
+  "how_this_gets_spun": ["Detailed framing analysis - neutral language"],
+  "deeper_rebuttal": "Extended neutral analysis. Focus on patterns, not motives.",
   "rebuttal_script": {
-    "short": "15-25 sec quick response",
-    "medium": "60 sec detailed response",
-    "long": "2-3 min comprehensive response"
+    "short": "15-25 sec factual response",
+    "medium": "60 sec evidence-based response",
+    "long": "2-3 min comprehensive analysis"
   },
-  "talk_tracks": ["If they say X, say Y format"],
-  "questions_to_ask": ["Critical thinking prompts"],
-  "what_to_share_instead": ["Better alternatives"]
+  "talk_tracks": ["Neutral question formats", "Evidence-focused responses"],
+  "questions_to_ask": ["What evidence exists?", "What's the source?", "What would settle this?"],
+  "what_to_share_instead": ["Primary sources", "Fact-checks", "Neutral reporting"]
 }
 
-Use plain, accessible language. Be calm but firm. Focus on empowering people to think critically.`;
+Professional, neutral, journalist-safe. Describe patterns and effects, never motives or character.`;
 }
 
 /**
@@ -332,44 +357,115 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
   };
 
   const result: TeachingTake = {
-    mode: input.mode as 'public' | 'creator',
+    mode: input.mode as 'public' | 'professional',
     topline,
     what_we_know: whatWeKnow.length > 0 ? whatWeKnow : ['No claims fully verified yet.'],
     what_is_unclear: whatIsUnclear.length > 0 ? whatIsUnclear : ['All claims need verification.'],
     what_to_say_back: whatToSayBack,
     action_plan: actionPlan,
+    
+    // Layer 2: Narrative analysis (all modes)
+    narrative_analysis: {
+      dominant_frame: input.framingFlags.length > 0 
+        ? `Uses ${input.framingFlags[0]} as primary framing device`
+        : 'No dominant framing detected',
+      tactics_detected: input.framingFlags,
+      emotional_triggers: deriveEmotionalTriggers(input.framingFlags),
+      repeated_phrases: [], // Would be populated by actual analysis
+      likely_effects: deriveLikelyEffects(input.framingRiskLevel, input.framingFlags),
+    },
+    
+    // Evidence gaps (synthesis layer)
+    evidence_gaps: {
+      missing_evidence: uncertainClaims.map(c => `Source for: ${c.text}`),
+      what_would_prove: uncertainClaims.map(c => `Official records, credible reporting, or expert verification of: ${c.text}`),
+      what_would_disprove: uncertainClaims.map(c => `Contradicting evidence or debunking from credible sources for: ${c.text}`),
+    },
   };
 
-  // Add extended sections for creator mode
-  if (input.mode === 'creator') {
+  // Add extended sections for professional mode
+  if (input.mode === 'professional') {
     result.how_this_gets_spun = input.framingFlags.map(flag => 
-      `Uses ${flag} to shape perception`
+      `Uses ${flag} as a persuasive technique`
     );
-    result.deeper_rebuttal = `This framing shows ${input.framingRiskLevel} manipulation risk. The tactics include ${input.framingFlags.slice(0, 3).join(', ')}. Always ask: who benefits from this framing? What's the evidence for each specific claim? Democracy depends on checking facts, not accepting stories that feel right.`;
+    result.deeper_rebuttal = `This content exhibits ${input.framingRiskLevel}-level framing characteristics. Observed tactics include ${input.framingFlags.slice(0, 3).join(', ')}. These patterns are commonly associated with persuasive messaging. Evidence-based analysis requires separating verified claims from unverified assertions and evaluating the framing techniques employed.`;
     result.rebuttal_script = {
       short: whatToSayBack,
-      medium: `${whatToSayBack} I've checked into this, and here's what actually has evidence: ${verifiedClaims.slice(0, 2).map(c => c.text).join('; ')}. The rest needs more verification. Let's not spread things without solid sources.`,
-      long: `Let me break this down carefully. What's verified: ${verifiedClaims.map(c => c.text).join('. ')}. What's still uncertain: ${uncertainClaims.slice(0, 2).map(c => c.text).join('. ')}. I'm also noticing the framing uses tactics like ${input.framingFlags.slice(0, 2).join(' and ')}. This can push us toward conclusions without solid proof. Let's focus on what's actually proven and demand better evidence for the rest.`,
+      medium: `${whatToSayBack} Based on available evidence: ${verifiedClaims.slice(0, 2).map(c => c.text).join('; ')}. Additional claims require further verification. Recommend cross-referencing with primary sources.`,
+      long: `Evidence assessment: Verified claims include ${verifiedClaims.map(c => c.text).join('. ')}. Unverified claims include ${uncertainClaims.slice(0, 2).map(c => c.text).join('. ')}. The framing employs tactics such as ${input.framingFlags.slice(0, 2).join(' and ')}, which may influence interpretation independent of factual content. Recommend focusing on verifiable evidence and identifying what additional sources would be needed to substantiate remaining claims.`,
     };
     result.talk_tracks = [
-      'If they say "everyone knows this": Say "Let\'s check which parts are actually verified."',
-      'If they say "the media is hiding this": Say "Which outlets did you check? I found [credible source]."',
-      'If they say "it\'s obvious": Say "Can you show me the evidence?"',
+      'Request: "Can you provide the original source for this claim?"',
+      'Clarify: "Which specific outlets have reported this with attribution?"',
+      'Probe: "What evidence would be needed to verify this assertion?"',
     ];
     result.questions_to_ask = [
-      "What's your source for that?",
-      'Has this been verified by multiple credible outlets?',
-      'What parts are proven vs still uncertain?',
-      'Who benefits from this framing?',
+      "What is the primary source?",
+      'Has this been independently verified?',
+      'What evidence is missing?',
+      'What framing techniques are being employed?',
     ];
     result.what_to_share_instead = [
-      'Share verified claims with source links',
-      'Link to credible fact-checkers (AP, Reuters, Snopes)',
-      "Emphasize what's still unknown",
+      'Primary source documents',
+      'Wire service reporting (AP, Reuters)',
+      'Fact-checking analysis',
+      'Evidence gap assessment',
     ];
   }
 
   return result;
+}
+
+/**
+ * Derive emotional triggers from framing flags
+ */
+function deriveEmotionalTriggers(framingFlags: string[]): string[] {
+  const triggerMap: Record<string, string[]> = {
+    'fear': ['Fear', 'Threat perception'],
+    'anger': ['Anger', 'Outrage'],
+    'urgency': ['Urgency', 'Time pressure'],
+    'scapegoat': ['Blame', 'Group targeting'],
+    'certainty': ['False certainty', 'Oversimplification'],
+    'us-vs-them': ['Tribal identity', 'Group conflict'],
+  };
+
+  const triggers = new Set<string>();
+  framingFlags.forEach(flag => {
+    const flagLower = flag.toLowerCase();
+    Object.entries(triggerMap).forEach(([key, values]) => {
+      if (flagLower.includes(key)) {
+        values.forEach(v => triggers.add(v));
+      }
+    });
+  });
+
+  return Array.from(triggers);
+}
+
+/**
+ * Derive likely effects from framing risk and flags
+ */
+function deriveLikelyEffects(riskLevel: string, framingFlags: string[]): string[] {
+  const effects: string[] = [];
+
+  if (riskLevel === 'extreme' || riskLevel === 'high') {
+    effects.push('May increase polarization and group conflict');
+    effects.push('May encourage sharing without verification');
+  }
+
+  if (framingFlags.some(f => f.toLowerCase().includes('scapegoat'))) {
+    effects.push('May direct blame toward specific groups');
+  }
+
+  if (framingFlags.some(f => f.toLowerCase().includes('fear') || f.toLowerCase().includes('urgency'))) {
+    effects.push('May trigger emotional responses that bypass critical thinking');
+  }
+
+  if (framingFlags.some(f => f.toLowerCase().includes('certainty'))) {
+    effects.push('May discourage questioning and evidence-seeking');
+  }
+
+  return effects.length > 0 ? effects : ['Standard persuasive framing patterns observed'];
 }
 
 /**
