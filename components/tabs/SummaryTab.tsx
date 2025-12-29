@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import type { AnalysisResult, TeachingTake, UsageTier } from '@/lib/types';
 import { TeachingTakeDisplay } from '@/components/TeachingTakeDisplay';
+import { PublicModeDisplay } from '@/components/PublicModeDisplay';
 
 function getLanguageRiskPresentation(score?: number) {
   if (typeof score !== 'number') {
@@ -81,12 +83,17 @@ export function SummaryTab({
   showTeachingTake: boolean;
   onGenerateTeachingTake: () => Promise<void>;
 }) {
+  const [displayMode, setDisplayMode] = useState<'public' | 'creator'>('public');
   const overall = result.overall_score ?? result.overallVerifiability;
   const retrievalState = getRetrievalState(result);
   const corroboratingSourceCount = computeCorroboratingSourceCount(result);
   const ranWithSources = retrievalState === 'RAN_WITH_RESULTS' && corroboratingSourceCount > 0;
 
   const language = getLanguageRiskPresentation(result.tactics?.score_0_to_100);
+
+  const handleUpgrade = () => {
+    window.location.href = '/pricing';
+  };
 
   return (
     <div className="space-y-6">
@@ -166,7 +173,40 @@ export function SummaryTab({
 
         {showTeachingTake && teachingTake ? (
           <div className="mt-4">
-            <TeachingTakeDisplay teachingTake={teachingTake} topic={input} isLocked={tier === 'free'} />
+            {/* Mode Toggle - only show for paid tiers */}
+            {tier !== 'free' && (
+              <div className="mb-4 flex gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode('public')}
+                  className={
+                    displayMode === 'public'
+                      ? 'flex-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white'
+                      : 'flex-1 rounded-md px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100'
+                  }
+                >
+                  Public Mode (Simple)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode('creator')}
+                  className={
+                    displayMode === 'creator'
+                      ? 'flex-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white'
+                      : 'flex-1 rounded-md px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100'
+                  }
+                >
+                  Creator Mode (Detailed)
+                </button>
+              </div>
+            )}
+
+            {/* Always show Public Mode for free tier, or based on toggle for paid */}
+            {tier === 'free' || displayMode === 'public' ? (
+              <PublicModeDisplay teachingTake={teachingTake} topic={input} onUpgrade={handleUpgrade} tier={tier} />
+            ) : (
+              <TeachingTakeDisplay teachingTake={teachingTake} topic={input} isLocked={false} />
+            )}
           </div>
         ) : null}
       </div>

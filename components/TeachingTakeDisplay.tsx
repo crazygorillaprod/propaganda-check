@@ -59,8 +59,9 @@ export function TeachingTakeDisplay({ teachingTake, topic, isLocked = false }: T
 
   const generateSocialSnippet = (platform: 'twitter' | 'linkedin' | 'facebook') => {
     const maxLength = platform === 'twitter' ? 280 : 700;
-    const summary = teachingTake.executive_summary.split('\n')[0];
-    const snippet = `${summary}\n\n${teachingTake.rebuttal_script.short}\n\n#FactCheck #MediaLiteracy`;
+    const summary = teachingTake.topline || teachingTake.executive_summary?.split('\n')[0] || 'Analysis complete';
+    const rebuttal = teachingTake.what_to_say_back || teachingTake.rebuttal_script?.short || '';
+    const snippet = `${summary}\n\n${rebuttal}\n\n#FactCheck #MediaLiteracy`;
     return snippet.substring(0, maxLength);
   };
 
@@ -114,28 +115,57 @@ export function TeachingTakeDisplay({ teachingTake, topic, isLocked = false }: T
       }
       yPos += 5;
 
-      // Sections
-      addSection('EXECUTIVE SUMMARY', teachingTake.executive_summary);
+      // Sections - handle both new and legacy structures
+      const execSummary = teachingTake.topline || teachingTake.executive_summary || '';
+      if (execSummary) {
+        addSection('SUMMARY', execSummary);
+      }
+      
       addSection('WHAT WE KNOW', teachingTake.what_we_know);
-      addSection('WHAT IS UNCERTAIN', teachingTake.what_is_uncertain);
-      addSection('HOW THIS GETS SPUN', teachingTake.how_this_gets_spun);
-      addSection('PRO-DEMOCRACY TAKE', teachingTake.pro_democracy_take);
+      addSection('WHAT IS UNCERTAIN', teachingTake.what_is_unclear);
+      
+      if (teachingTake.how_this_gets_spun && teachingTake.how_this_gets_spun.length > 0) {
+        addSection('HOW THIS GETS SPUN', teachingTake.how_this_gets_spun);
+      }
+      
+      if (teachingTake.pro_democracy_take) {
+        addSection('PRO-DEMOCRACY TAKE', teachingTake.pro_democracy_take);
+      }
       
       yPos += 5;
       addText('REBUTTAL SCRIPTS', 14, true);
       yPos += 3;
-      addText('Quick (15-25 sec)', 11, true);
-      addText(teachingTake.rebuttal_script.short);
-      yPos += 3;
-      addText('Medium (60 sec)', 11, true);
-      addText(teachingTake.rebuttal_script.medium);
-      yPos += 3;
-      addText('Long (2-3 min)', 11, true);
-      addText(teachingTake.rebuttal_script.long);
       
-      addSection('TALK TRACKS', teachingTake.talk_tracks);
-      addSection('QUESTIONS TO ASK', teachingTake.questions_to_ask);
-      addSection('WHAT TO SHARE INSTEAD', teachingTake.what_to_share_instead);
+      if (teachingTake.what_to_say_back) {
+        addText('Quick Response:', 11, true);
+        addText(teachingTake.what_to_say_back);
+        yPos += 3;
+      }
+      
+      if (teachingTake.rebuttal_script?.short) {
+        addText('Quick (15-25 sec)', 11, true);
+        addText(teachingTake.rebuttal_script.short);
+        yPos += 3;
+      }
+      if (teachingTake.rebuttal_script?.medium) {
+        addText('Medium (60 sec)', 11, true);
+        addText(teachingTake.rebuttal_script.medium);
+        yPos += 3;
+      }
+      if (teachingTake.rebuttal_script?.long) {
+        addText('Long (2-3 min)', 11, true);
+        addText(teachingTake.rebuttal_script.long);
+      }
+      
+      if (teachingTake.talk_tracks && teachingTake.talk_tracks.length > 0) {
+        addSection('TALK TRACKS', teachingTake.talk_tracks);
+      }
+      if (teachingTake.questions_to_ask && teachingTake.questions_to_ask.length > 0) {
+        addSection('QUESTIONS TO ASK', teachingTake.questions_to_ask);
+      }
+      if (teachingTake.what_to_share_instead && teachingTake.what_to_share_instead.length > 0) {
+        addSection('WHAT TO SHARE INSTEAD', teachingTake.what_to_share_instead);
+      }
       
       yPos += 5;
       addText('ACTION PLAN', 14, true);
@@ -165,49 +195,30 @@ export function TeachingTakeDisplay({ teachingTake, topic, isLocked = false }: T
   };
 
   const exportToText = () => {
+    const summary = teachingTake.topline || teachingTake.executive_summary || '';
     const exportText = `
 TEACHING TAKE - Evidence-Based Analysis
 ========================================
 ${topic ? `\nTopic: ${topic}\n` : ''}
-EXECUTIVE SUMMARY
-${teachingTake.executive_summary}
-
+${summary ? `SUMMARY\n${summary}\n\n` : ''}
 WHAT WE KNOW
 ${teachingTake.what_we_know.map((item, i) => `${i + 1}. ${item}`).join('\n')}
 
 WHAT IS UNCERTAIN
-${teachingTake.what_is_uncertain.map((item, i) => `${i + 1}. ${item}`).join('\n')}
+${teachingTake.what_is_unclear.map((item, i) => `${i + 1}. ${item}`).join('\n')}
 
-HOW THIS GETS SPUN
-${teachingTake.how_this_gets_spun.map((item, i) => `${i + 1}. ${item}`).join('\n')}
-
-PRO-DEMOCRACY TAKE
-${teachingTake.pro_democracy_take}
-
+${teachingTake.how_this_gets_spun && teachingTake.how_this_gets_spun.length > 0 ? `HOW THIS GETS SPUN\n${teachingTake.how_this_gets_spun.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n` : ''}
+${teachingTake.pro_democracy_take ? `PRO-DEMOCRACY TAKE\n${teachingTake.pro_democracy_take}\n\n` : ''}
 REBUTTAL SCRIPTS
 ================
 
-Quick (15-25 sec):
-${teachingTake.rebuttal_script.short}
-
-Medium (60 sec):
-${teachingTake.rebuttal_script.medium}
-
-Long (2-3 min):
-${teachingTake.rebuttal_script.long}
-
-TALK TRACKS
-===========
-${teachingTake.talk_tracks.map((item, i) => `${i + 1}. ${item}`).join('\n')}
-
-QUESTIONS TO ASK
-================
-${teachingTake.questions_to_ask.map((item, i) => `${i + 1}. ${item}`).join('\n')}
-
-WHAT TO SHARE INSTEAD
-=====================
-${teachingTake.what_to_share_instead.map((item, i) => `${i + 1}. ${item}`).join('\n')}
-
+${teachingTake.what_to_say_back ? `Quick Response:\n${teachingTake.what_to_say_back}\n\n` : ''}
+${teachingTake.rebuttal_script?.short ? `Quick (15-25 sec):\n${teachingTake.rebuttal_script.short}\n\n` : ''}
+${teachingTake.rebuttal_script?.medium ? `Medium (60 sec):\n${teachingTake.rebuttal_script.medium}\n\n` : ''}
+${teachingTake.rebuttal_script?.long ? `Long (2-3 min):\n${teachingTake.rebuttal_script.long}\n\n` : ''}
+${teachingTake.talk_tracks && teachingTake.talk_tracks.length > 0 ? `TALK TRACKS\n===========\n${teachingTake.talk_tracks.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n` : ''}
+${teachingTake.questions_to_ask && teachingTake.questions_to_ask.length > 0 ? `QUESTIONS TO ASK\n================\n${teachingTake.questions_to_ask.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n` : ''}
+${teachingTake.what_to_share_instead && teachingTake.what_to_share_instead.length > 0 ? `WHAT TO SHARE INSTEAD\n=====================\n${teachingTake.what_to_share_instead.map((item, i) => `${i + 1}. ${item}`).join('\n')}\n\n` : ''}
 ACTION PLAN
 ===========
 
@@ -237,8 +248,9 @@ Generated by ${BRAND} — ${TAGLINE}
 
   const shareViaEmail = () => {
     const subject = encodeURIComponent(topic || 'Teaching Take - Evidence-Based Analysis');
+    const shortContent = teachingTake.what_to_say_back || teachingTake.rebuttal_script?.short || teachingTake.topline || '';
     const body = encodeURIComponent(
-      `I thought you might find this analysis helpful:\n\n${teachingTake.rebuttal_script.short}\n\nFull analysis: [Link would go here]\n\nGenerated by ${BRAND}`
+      `I thought you might find this analysis helpful:\n\n${shortContent}\n\nFull analysis: [Link would go here]\n\nGenerated by ${BRAND}`
     );
     window.open(`mailto:?subject=${subject}&body=${body}`);
   };
@@ -246,9 +258,9 @@ Generated by ${BRAND} — ${TAGLINE}
   const sections = [
     {
       id: 'summary',
-      title: 'Executive Summary',
+      title: teachingTake.topline ? 'Summary' : 'Executive Summary',
       icon: '📋',
-      content: teachingTake.executive_summary,
+      content: teachingTake.topline || teachingTake.executive_summary || '',
       copyable: true,
     },
     {
@@ -262,7 +274,7 @@ Generated by ${BRAND} — ${TAGLINE}
       id: 'uncertain',
       title: 'What Is Uncertain',
       icon: '❓',
-      content: teachingTake.what_is_uncertain,
+      content: teachingTake.what_is_unclear,
       copyable: true,
     },
     {
@@ -443,7 +455,7 @@ Generated by ${BRAND} — ${TAGLINE}
                     onClick={() => copyToClipboard(
                       Array.isArray(section.content) 
                         ? section.content.join('\n\n') 
-                        : section.content,
+                        : (section.content || ''),
                       section.id
                     )}
                     className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium"
@@ -472,20 +484,20 @@ Generated by ${BRAND} — ${TAGLINE}
           </span>
         </button>
 
-        {expandedSection === 'rebuttals' && (
+        {expandedSection === 'rebuttals' && teachingTake.rebuttal_script && (
           <div className="px-4 py-4 bg-gray-50 border-t space-y-4">
             <div className="bg-white p-4 rounded border">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold text-gray-900">Quick (15-25 sec)</h4>
                 <button
-                  onClick={() => copyToClipboard(teachingTake.rebuttal_script.short, 'short')}
+                  onClick={() => copyToClipboard(teachingTake.rebuttal_script?.short || '', 'short')}
                   className="text-sm text-blue-600 hover:text-blue-800"
                 >
                   {copiedSection === 'short' ? '✓ Copied' : 'Copy'}
                 </button>
               </div>
               <p className="text-gray-700 leading-relaxed">
-                {teachingTake.rebuttal_script.short}
+                {teachingTake.rebuttal_script?.short}
               </p>
             </div>
 
@@ -493,14 +505,14 @@ Generated by ${BRAND} — ${TAGLINE}
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold text-gray-900">Medium (60 sec)</h4>
                 <button
-                  onClick={() => copyToClipboard(teachingTake.rebuttal_script.medium, 'medium')}
+                  onClick={() => copyToClipboard(teachingTake.rebuttal_script?.medium || '', 'medium')}
                   className="text-sm text-blue-600 hover:text-blue-800"
                 >
                   {copiedSection === 'medium' ? '✓ Copied' : 'Copy'}
                 </button>
               </div>
               <p className="text-gray-700 leading-relaxed">
-                {teachingTake.rebuttal_script.medium}
+                {teachingTake.rebuttal_script?.medium}
               </p>
             </div>
 
@@ -508,14 +520,14 @@ Generated by ${BRAND} — ${TAGLINE}
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold text-gray-900">Long (2-3 min)</h4>
                 <button
-                  onClick={() => copyToClipboard(teachingTake.rebuttal_script.long, 'long')}
+                  onClick={() => copyToClipboard(teachingTake.rebuttal_script?.long || '', 'long')}
                   className="text-sm text-blue-600 hover:text-blue-800"
                 >
                   {copiedSection === 'long' ? '✓ Copied' : 'Copy'}
                 </button>
               </div>
               <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
-                {teachingTake.rebuttal_script.long}
+                {teachingTake.rebuttal_script?.long}
               </p>
             </div>
           </div>
@@ -537,7 +549,7 @@ Generated by ${BRAND} — ${TAGLINE}
           </span>
         </button>
 
-        {expandedSection === 'talks' && (
+        {expandedSection === 'talks' && teachingTake.talk_tracks && (
           <div className="px-4 py-4 bg-gray-50 border-t">
             <div className="space-y-3">
               {teachingTake.talk_tracks.map((track, idx) => (
@@ -547,7 +559,7 @@ Generated by ${BRAND} — ${TAGLINE}
               ))}
             </div>
             <button
-              onClick={() => copyToClipboard(teachingTake.talk_tracks.join('\n\n'), 'talks')}
+              onClick={() => copyToClipboard(teachingTake.talk_tracks?.join('\n\n') || '', 'talks')}
               className="mt-3 text-sm text-blue-600 hover:text-blue-800 font-medium"
             >
               {copiedSection === 'talks' ? '✓ Copied!' : 'Copy all talk tracks'}
@@ -571,7 +583,7 @@ Generated by ${BRAND} — ${TAGLINE}
           </span>
         </button>
 
-        {expandedSection === 'questions' && (
+        {expandedSection === 'questions' && teachingTake.questions_to_ask && (
           <div className="px-4 py-4 bg-gray-50 border-t">
             <ul className="space-y-2">
               {teachingTake.questions_to_ask.map((question, idx) => (
@@ -600,7 +612,7 @@ Generated by ${BRAND} — ${TAGLINE}
           </span>
         </button>
 
-        {expandedSection === 'share' && (
+        {expandedSection === 'share' && teachingTake.what_to_share_instead && (
           <div className="px-4 py-4 bg-gray-50 border-t">
             <ul className="space-y-2">
               {teachingTake.what_to_share_instead.map((item, idx) => (

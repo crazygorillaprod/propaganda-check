@@ -1,14 +1,23 @@
 import type { AnalysisResult, TeachingTake, Claim, EvidenceItem } from './types';
+import type { WritingMode, WritingProfile } from './writing-profile';
+import { getWritingProfile, checkReadability } from './writing-profile';
 
 /**
- * Generates a Teaching Take for a misinformation defense tool.
+ * Generates a "BFM Breakdown" Teaching Take for Public Mode or Creator Mode.
  * 
- * Key principles:
- * - Separate VERIFIED FACTS vs UNCERTAINTIES vs INTERPRETATION
+ * PUBLIC MODE (default):
+ * - 6th-grade reading level, plain language, calm but firm
+ * - Pro-democracy, pro-rights, pro-worker, pro-marginalized communities
+ * - Fast-to-scan: Topline + 3 bullet sections + Action Plan on first screen
+ * - Separate VERIFIED FACTS vs UNCERTAINTIES vs "What to say back"
  * - Focus on behaviors/tactics, not character judgments
- * - Sixth-grade reading level, plain language, calm but firm
  * - Cite sources by outlet name [AP], [Reuters], [BBC]
  * - Do NOT invent sources, dates, or quotes
+ * 
+ * CREATOR MODE:
+ * - More detailed analysis with full sections
+ * - Extended rebuttals and talk tracks
+ * - Deeper tactical breakdown
  */
 
 interface EvidenceCluster {
@@ -24,6 +33,8 @@ interface TeachingTakeInput {
   evidenceClusters: Map<string, EvidenceCluster>;
   framingRiskLevel: 'low' | 'medium' | 'high' | 'extreme';
   framingFlags: string[];
+  mode: WritingMode;
+  profile: WritingProfile;
 }
 
 /**
@@ -207,6 +218,8 @@ export function prepareTeachingTakeInput(
     evidenceClusters,
     framingRiskLevel,
     framingFlags: analysisResult.tactics.flags,
+    mode: 'public', // Default mode for legacy generator
+    profile: getWritingProfile('public'),
   };
 }
 
@@ -252,6 +265,22 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
   );
 
   return {
+    topline: `${verifiedClaims.length} verified, ${uncertainClaims.length} need receipts, framing risk: ${input.framingRiskLevel}.`,
+    what_to_say_back: `Hold on—let's check the facts first. Some of this is verified, but other parts need more evidence. What sources are you relying on?`,
+    action_plan: {
+      today: [
+        'Share the verified facts with proper sources',
+        'Label the uncertain claims as "needs verification"',
+      ],
+      this_week: [
+        'Research the uncertain claims with credible sources',
+        'Document the framing tactics you notice',
+      ],
+      ongoing: [
+        'Track updates as new evidence emerges',
+        'Build a habit of separating verified from unverified info',
+      ],
+    },
     executive_summary: `Analysis of "${input.topic}":\n• ${verifiedClaims.length} verified claims\n• ${uncertainClaims.length} uncertain or unverified claims\n• Framing risk: ${input.framingRiskLevel}\n• Key tactics: ${input.framingFlags.slice(0, 2).join(', ')}`,
     
     what_we_know: verifiedClaims.map((claim, idx) => {
@@ -263,7 +292,7 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
       return `${claim.text}${outletStr}`;
     }),
     
-    what_is_uncertain: uncertainClaims.map(claim => 
+    what_is_unclear: uncertainClaims.map(claim => 
       `${claim.text} (Verdict: ${claim.verdict})`
     ),
     
@@ -307,25 +336,6 @@ function createPlaceholderTeachingTake(input: TeachingTakeInput): TeachingTake {
       'Data from official government or institutional sources',
     ],
     
-    action_plan: {
-      today: [
-        'Verify the key claims using the citations provided',
-        'Check 2-3 credible news sources for their coverage',
-        'Note which parts are proven vs. uncertain',
-      ],
-      this_week: [
-        'Follow up on uncertain claims as more information emerges',
-        'Share verified information with others who might be misled',
-        'Practice using the rebuttal scripts in conversations',
-      ],
-      ongoing: [
-        'Build a habit of checking sources before sharing',
-        'Develop your media literacy skills',
-        'Help others learn to think critically about information',
-        'Support quality journalism through subscriptions or donations',
-      ],
-    },
-    
     citations: input.claims.map((claim, idx) => ({
       claim_id: `claim_${idx + 1}`,
       evidence_ids: claim.evidence
@@ -351,25 +361,37 @@ function parseTeachingTakeResponse(response: string, input: TeachingTakeInput): 
 export function validateTeachingTake(teachingTake: TeachingTake): string[] {
   const errors: string[] = [];
 
-  // Check executive summary length
-  const bulletCount = teachingTake.executive_summary.split('\n').filter(line => line.trim().startsWith('•') || line.trim().startsWith('-')).length;
-  if (bulletCount < 4 || bulletCount > 6) {
-    errors.push(`Executive summary should have 4-6 bullets, found ${bulletCount}`);
+  // Check required fields
+  if (!teachingTake.topline || teachingTake.topline.length < 10) {
+    errors.push('Topline is missing or too short');
+  }
+  if (!teachingTake.what_to_say_back || teachingTake.what_to_say_back.length < 20) {
+    errors.push('What to say back is missing or too short');
   }
 
-  // Check rebuttal scripts
-  if (teachingTake.rebuttal_script.short.length < 50) {
-    errors.push('Short rebuttal script is too brief');
-  }
-  if (teachingTake.rebuttal_script.medium.length < 200) {
-    errors.push('Medium rebuttal script is too brief');
-  }
-  if (teachingTake.rebuttal_script.long.length < 400) {
-    errors.push('Long rebuttal script is too brief');
+  // Check executive summary if present (legacy field)
+  if (teachingTake.executive_summary) {
+    const bulletCount = teachingTake.executive_summary.split('\n').filter(line => line.trim().startsWith('•') || line.trim().startsWith('-')).length;
+    if (bulletCount < 4 || bulletCount > 6) {
+      errors.push(`Executive summary should have 4-6 bullets, found ${bulletCount}`);
+    }
   }
 
-  // Check talk tracks
-  if (teachingTake.talk_tracks.length < 5) {
+  // Check rebuttal scripts if present (legacy field)
+  if (teachingTake.rebuttal_script) {
+    if (teachingTake.rebuttal_script.short && teachingTake.rebuttal_script.short.length < 50) {
+      errors.push('Short rebuttal script is too brief');
+    }
+    if (teachingTake.rebuttal_script.medium && teachingTake.rebuttal_script.medium.length < 200) {
+      errors.push('Medium rebuttal script is too brief');
+    }
+    if (teachingTake.rebuttal_script.long && teachingTake.rebuttal_script.long.length < 400) {
+      errors.push('Long rebuttal script is too brief');
+    }
+  }
+
+  // Check talk tracks if present (optional field)
+  if (teachingTake.talk_tracks && teachingTake.talk_tracks.length < 5) {
     errors.push(`Talk tracks should have at least 5 items, found ${teachingTake.talk_tracks.length}`);
   }
 
@@ -384,8 +406,8 @@ export function validateTeachingTake(teachingTake: TeachingTake): string[] {
     errors.push('Action plan "ongoing" section is empty');
   }
 
-  // Check citations
-  if (teachingTake.citations.length === 0) {
+  // Check citations if present (optional field)
+  if (teachingTake.citations && teachingTake.citations.length === 0) {
     errors.push('No citations provided');
   }
 

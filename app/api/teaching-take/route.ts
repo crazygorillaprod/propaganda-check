@@ -1,13 +1,15 @@
-import { generateTeachingTake, prepareTeachingTakeInput } from '@/lib/teaching-take';
+import { generateTeachingTake } from '@/lib/teaching-take-v2';
 import type { AnalysisResult } from '@/lib/types';
+import type { WritingMode } from '@/lib/writing-profile';
 import { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { analysisResult, topic } = body as {
+    const { analysisResult, topic, mode } = body as {
       analysisResult: AnalysisResult;
       topic?: string;
+      mode?: WritingMode;
     };
 
     if (!analysisResult) {
@@ -17,8 +19,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Default to Public Mode (6th grade, action-oriented)
+    const writingMode: WritingMode = mode || 'public';
+
     // Generate teaching take (uses placeholder for now, can integrate LLM later)
-    const teachingTake = await generateTeachingTake(analysisResult, topic);
+    const teachingTake = await generateTeachingTake(analysisResult, topic, writingMode);
 
     return Response.json(teachingTake);
   } catch (err) {

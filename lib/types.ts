@@ -112,25 +112,35 @@ export type AnalysisResult = {
 };
 
 export type TeachingTake = {
-  executive_summary: string;              // 4–6 bullets max
-  what_we_know: string[];                 // anchored to evidence
-  what_is_uncertain: string[];            // explicitly stated
-  how_this_gets_spun: string[];           // framing tactics, neutral tone
-  pro_democracy_take: string;             // civic + rights framing
-  rebuttal_script: {
+  // Public Mode structure (default)
+  mode?: 'public' | 'creator';
+  topline: string;                        // 1 sentence summary
+  what_we_know: string[];                 // 2-4 bullets max (public), more in creator
+  what_is_unclear: string[];              // 1-3 bullets
+  what_to_say_back: string;               // Short comment-ready rebuttal (public mode)
+  action_plan: {
+    today: string[];                      // 2 bullets
+    this_week: string[];                  // 2 bullets
+    ongoing: string[];                    // 2 bullets
+  };
+  
+  // Creator/detailed sections (collapsed by default in public mode)
+  how_this_gets_spun?: string[];          // framing tactics
+  deeper_rebuttal?: string;               // longer analysis
+  rebuttal_script?: {                     // legacy + extended versions
     short: string;                        // 15–25 sec
     medium: string;                       // 60 sec
     long: string;                         // 2–3 min
   };
-  talk_tracks: string[];                  // "If they say X, say Y"
-  questions_to_ask: string[];             // "What's your source?" etc
-  what_to_share_instead: string[];        // safer replacements
-  action_plan: {
-    today: string[];
-    this_week: string[];
-    ongoing: string[];
-  };
-  citations: { claim_id: string; evidence_ids: string[] }[];  // important
+  talk_tracks?: string[];                 // "If they say X, say Y"
+  questions_to_ask?: string[];            // critical thinking prompts
+  what_to_share_instead?: string[];       // safer alternatives
+  
+  // Legacy fields (kept for backward compatibility)
+  executive_summary?: string;
+  pro_democracy_take?: string;
+  
+  citations?: { claim_id: string; evidence_ids: string[] }[];
 };
 
 // Usage Metering Types

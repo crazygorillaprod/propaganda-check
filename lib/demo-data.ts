@@ -158,13 +158,15 @@ export const demoAnalysisResult: AnalysisResult = {
 };
 
 export const demoTeachingTake: TeachingTake = {
+  topline: 'The ordinance passed, but the "50% in a year" impact claim needs a source and methodology.',
+  what_to_say_back: 'The vote and ordinance details are in the council minutes. The "50% in a year" number needs a cited study or city methodology—otherwise it\'s a guess.',
   executive_summary:
     '• The ordinance vote and timeline are verifiable from official records.\n• The “50% in a year” claim is an impact estimate and needs a source.\n• Don’t repeat numbers unless you can cite the method and baseline.\n• Safer wording: “the city expects reductions, but the size depends on compliance.”',
   what_we_know: [
     'The council passed an ordinance restricting single-use plastic checkout bags (effective date specified in official documentation).',
     'Coverage and implementation details typically include phase-in periods and retailer guidance.',
   ],
-  what_is_uncertain: [
+  what_is_unclear: [
     'The exact magnitude of waste reduction attributable to the ordinance within a one-year window.',
     'Whether substitution effects (paper bags, thicker reusable bags) offset some expected gains.',
   ],
